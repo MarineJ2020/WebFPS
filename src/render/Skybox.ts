@@ -1,0 +1,24 @@
+import * as THREE from "three";
+import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
+
+const SKYBOX_URL = "/skybox/skybox.exr";
+
+/**
+ * Loads an optional equirectangular EXR skybox from public/skybox/skybox.exr. If the file
+ * hasn't been dropped in (or fails to load), the scene just keeps its flat fallback color -
+ * this is a nice-to-have, not a hard requirement.
+ */
+export function loadSkybox(scene: THREE.Scene): void {
+  new EXRLoader().load(
+    SKYBOX_URL,
+    (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = texture;
+      scene.environment = texture;
+    },
+    undefined,
+    () => {
+      // No skybox.exr present yet - keep the solid-color background from SceneManager.
+    },
+  );
+}
