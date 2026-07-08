@@ -3,25 +3,30 @@ import type { WeaponConfig } from "../data/weapons/weaponTypes";
 import { MuzzleFlash } from "./fx/MuzzleFlash";
 import { loadModelInstance } from "./GLTFModelCache";
 import { ViewmodelAnimator } from "./ViewmodelAnimator";
+import { ViewmodelSway } from "./ViewmodelSway";
+import { WeaponSounds } from "./fx/WeaponSounds";
+import { clipDurationSeconds } from "./WeaponAnimationClips";
 
 // Kept close to center-bottom (rather than far bottom-right) so it stays in frame across both
 // narrow and wide aspect ratios, since THREE's horizontal FOV shrinks with a narrower viewport.
 // z is far enough that the model's near face clears the camera's near clip plane (0.1) with
 // margin - sitting exactly on it caused intermittent clipping.
-const VIEWMODEL_OFFSET = new THREE.Vector3(0.09, -0.13, -0.55);
+const VIEWMODEL_OFFSET = new THREE.Vector3(0.0, -0.0, -0.0);
 
 // --- Tunables for the real AutoRifle.glb model - the source asset's exported scale/orientation
 // couldn't be visually confirmed from here; nudge these if the gun looks mis-scaled, sideways,
 // or the muzzle flash/tracers don't originate from the barrel tip. ---
-const MODEL_SCALE = 0.01;
-const MODEL_ROTATION_EULER = new THREE.Euler(0, 0, 0);
-const MODEL_LOCAL_OFFSET = new THREE.Vector3(0, 0, 0);
+const MODEL_SCALE = 1;
+const MODEL_ROTATION_EULER = new THREE.Euler(0, 90+45, 0);
+const MODEL_LOCAL_OFFSET = new THREE.Vector3(0.2, -0.2, -0.2);
 const MUZZLE_LOCAL_OFFSET = new THREE.Vector3(0, 0, -0.6);
 
 /** Placeholder-primitive or real animated gun, parented to the camera so it rides along with view/recoil motion. */
 export class PlayerViewmodel {
   private readonly group = new THREE.Group();
   private readonly muzzleFlash = new MuzzleFlash();
+  private readonly sway = new ViewmodelSway();
+  private readonly sounds = new WeaponSounds();
   private modelRoot: THREE.Object3D | null = null;
   private animator: ViewmodelAnimator | null = null;
   private currentConfigId: string | null = null;
@@ -90,15 +95,33 @@ export class PlayerViewmodel {
   playFireEffect(isLastRound: boolean): void {
     this.muzzleFlash.trigger();
     this.animator?.playFire(isLastRound);
+    this.sounds.playFire();
   }
 
   playReloadEffect(isEmpty: boolean): void {
     this.animator?.playReload(isEmpty);
+    const duration = clipDurationSeconds(isEmpty ? "reloadB" : "reloadA");
+    this.sounds.playReload(isEmpty, duration);
   }
 
-  update(dt: number): void {
+  /** Suppresses the idle fidget and keeps the slide/bolt held back while the mag is dry. */
+  setMagazineEmpty(empty: boolean): void {
+    this.animator?.setMagazineEmpty(empty);
+  }
+
+  update(
+    dt: number,
+    yawDelta: number,
+    pitchDelta: number,
+    grounded: boolean,
+    verticalVelocity: number,
+  ): void {
     this.muzzleFlash.update(dt);
     this.animator?.update(dt);
+
+    const { yaw, pitch, bob } = this.sway.update(dt, yawDelta, pitchDelta, grounded, verticalVelocity);
+    this.group.rotation.set(pitch, yaw, 0);
+    this.group.position.set(VIEWMODEL_OFFSET.x, VIEWMODEL_OFFSET.y + bob, VIEWMODEL_OFFSET.z);
   }
 
   private clearModel(): void {

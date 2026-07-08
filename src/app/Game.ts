@@ -16,6 +16,7 @@ import { getWeaponConfig } from "../data/weapons/weaponTypes";
 import { SettingsStore } from "../ui/SettingsStore";
 import { SettingsMenu } from "../ui/menus/SettingsMenu";
 import { DeathScreen } from "../ui/menus/DeathScreen";
+import { BotDebugVisualizer } from "../render/debug/BotDebugVisualizer";
 
 export class Game {
   private readonly sceneManager: SceneManager;
@@ -24,6 +25,7 @@ export class Game {
   private readonly entityRenderer: EntityRenderer;
   private readonly viewmodel: PlayerViewmodel;
   private readonly hitDecals: HitDecals;
+  private readonly botDebug: BotDebugVisualizer;
   private readonly clock = new FixedTimestepAccumulator(FIXED_TIMESTEP, MAX_FRAME_DELTA);
   private readonly settingsStore = new SettingsStore();
   private readonly settingsMenu: SettingsMenu;
@@ -42,6 +44,7 @@ export class Game {
     this.entityRenderer = new EntityRenderer(this.sceneManager.scene);
     this.viewmodel = new PlayerViewmodel(this.sceneManager.camera);
     this.hitDecals = new HitDecals(this.sceneManager.scene);
+    this.botDebug = new BotDebugVisualizer(this.sceneManager.scene);
     this.settingsMenu = new SettingsMenu(container, this.settingsStore);
     this.deathScreen = new DeathScreen(container);
 
@@ -109,8 +112,13 @@ export class Game {
       document.exitPointerLock();
     }
 
+    let yawDelta = 0;
+    let pitchDelta = 0;
+
     if (!this.paused) {
       const command = this.inputManager.consumeCommand();
+      yawDelta = command.yawDelta;
+      pitchDelta = command.pitchDelta;
       const commandsByEntityId = new Map<string, PlayerCommand>([
         [this.simulation.player.id, command],
       ]);
@@ -124,11 +132,14 @@ export class Game {
         this.viewmodel.playReloadEffect(weapon.ammoInMag <= 0);
       }
       this.lastReloadTimer = weapon.reloadTimer;
+      this.viewmodel.setMagazineEmpty(weapon.ammoInMag <= 0 && weapon.reloadTimer <= 0);
     }
 
-    this.viewmodel.update(frameDelta);
+    const player = this.simulation.player;
+    this.viewmodel.update(frameDelta, yawDelta, pitchDelta, player.grounded, player.verticalVelocity);
     applyPlayerToCamera(this.sceneManager.camera, this.simulation.player);
     this.entityRenderer.sync(this.simulation.aiCharacters);
+    this.botDebug.sync(this.simulation.aiCharacters);
     this.sceneManager.render();
     this.updateHUD();
 

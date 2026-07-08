@@ -8,12 +8,14 @@ const CAPSULE_HEIGHT = 1.7;
 const BOT_COLOR = new THREE.Color(0xd6455c);
 const BOT_DEAD_COLOR = new THREE.Color(0x555555);
 
-// --- Tunables for attaching the third-person gun model to a bot's "hand" - couldn't be
-// visually confirmed from here; nudge if the gun floats away from the capsule or looks
-// mis-scaled/rotated. Roughly: forward and to the right of center, chest-height. ---
-const GUN_SCALE = 0.01;
-const GUN_ROTATION_EULER = new THREE.Euler(0, 0, 0);
-const GUN_LOCAL_OFFSET = new THREE.Vector3(0.3, 0.2, 0.2);
+// --- Tunables for attaching the third-person gun model to a bot's "hand". The first-person
+// AutoRifle.glb (same asset family) turned out to need scale 1, not the originally-guessed
+// 0.01 - matching that here, since a 0.01 scale rendered the gun as a barely-visible speck.
+// Nudge further if the gun floats away from the capsule or looks mis-scaled/rotated. Roughly:
+// forward and to the right of center, chest-height. ---
+const GUN_SCALE = 1;
+const GUN_ROTATION_EULER = new THREE.Euler(0, Math.PI * 0.75, 0);
+const GUN_LOCAL_OFFSET = new THREE.Vector3(0.25, 0.1, 0.15);
 
 /** Renders each AI bot as a primitive capsule (holding its weapon's third-person model), synced to its simulation position each frame. */
 export class EntityRenderer {

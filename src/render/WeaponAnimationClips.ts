@@ -15,7 +15,7 @@ const FRAME_RANGES: Record<WeaponClipName, [number, number]> = {
   firelast: [68, 76],
   reloadB: [77, 159],
   hide: [160, 170],
-  ready: [171, 209],
+  ready: [208, 209],
   ambient: [210, 232],
 };
 
