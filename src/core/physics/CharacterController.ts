@@ -75,4 +75,15 @@ export class CharacterController {
     this.body.setNextKinematicTranslation(next);
     return { x: next.x, y: next.y - this.centerOffsetY, z: next.z };
   }
+
+  teleport(position: { x: number; y: number; z: number }): void {
+    const center = {
+      x: position.x,
+      y: position.y + this.centerOffsetY,
+      z: position.z,
+    };
+    this.body.setTranslation(center, true);
+    this.body.setNextKinematicTranslation(center);
+    this.grounded = false;
+  }
 }

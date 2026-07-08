@@ -9,7 +9,7 @@ const SKYBOX_URL = "/skybox/skybox.exr";
  * this is a nice-to-have, not a hard requirement.
  */
 export function loadSkybox(scene: THREE.Scene): void {
-  new EXRLoader().load(
+  new EXRLoader().setDataType(THREE.FloatType).load(
     SKYBOX_URL,
     (texture) => {
       texture.mapping = THREE.EquirectangularReflectionMapping;

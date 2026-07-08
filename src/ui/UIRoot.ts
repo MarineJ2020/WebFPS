@@ -1,6 +1,7 @@
 import type { GameModeState } from "../app/GameModeState";
 import type { SettingsStore } from "./SettingsStore";
 import { HUD } from "./hud/HUD";
+import { Scoreboard } from "./hud/Scoreboard";
 import { DeathScreen } from "./menus/DeathScreen";
 import { LoadingOverlay } from "./menus/LoadingOverlay";
 import { MainMenu, type MainMenuActions } from "./menus/MainMenu";
@@ -9,6 +10,7 @@ import { SettingsMenu } from "./menus/SettingsMenu";
 
 export class UIRoot {
   readonly hud: HUD;
+  readonly scoreboard: Scoreboard;
   readonly mainMenu: MainMenu;
   readonly pauseMenu: PauseMenu;
   readonly settingsMenu: SettingsMenu;
@@ -17,6 +19,7 @@ export class UIRoot {
 
   constructor(container: HTMLElement, settingsStore: SettingsStore) {
     this.hud = new HUD(container);
+    this.scoreboard = new Scoreboard(container);
     this.mainMenu = new MainMenu(container);
     this.pauseMenu = new PauseMenu(container);
     this.settingsMenu = new SettingsMenu(container, settingsStore);

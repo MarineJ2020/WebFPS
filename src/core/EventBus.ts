@@ -25,10 +25,16 @@ export interface NoiseEvent {
   radius: number;
 }
 
+export interface CharacterKilledEvent {
+  killerId: string;
+  victimId: string;
+}
+
 interface EventMap {
   weaponFired: WeaponFiredEvent;
   weaponHit: WeaponHitEvent;
   noiseEvent: NoiseEvent;
+  characterKilled: CharacterKilledEvent;
 }
 
 type Listener<T> = (payload: T) => void;

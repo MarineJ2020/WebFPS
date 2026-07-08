@@ -51,6 +51,12 @@ select {
   backdrop-filter: blur(10px);
 }
 
+.main-menu-panel {
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
 .main-menu-panel h1 {
   margin: 4px 0 8px;
   font-size: 42px;
@@ -61,6 +67,34 @@ select {
   margin-bottom: 22px;
   color: rgba(245, 247, 251, 0.72);
   line-height: 1.45;
+}
+
+.menu-option-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.035)),
+    rgba(0, 0, 0, 0.14);
+}
+
+.menu-option-label {
+  min-height: 32px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: rgba(245, 247, 251, 0.84);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.local-multiplayer-box input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  color: #f5f7fb;
+  background: rgba(0, 0, 0, 0.24);
 }
 
 .menu-eyebrow,
@@ -111,6 +145,51 @@ select {
   background: rgba(12, 15, 22, 0.92);
 }
 
+.scoreboard-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 16;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  pointer-events: none;
+  color: #f5f7fb;
+  font: 14px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.scoreboard-panel {
+  width: min(620px, calc(100vw - 32px));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(12, 15, 22, 0.9);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.scoreboard-title {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scoreboard-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 56px 56px 70px;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.scoreboard-header {
+  color: rgba(245, 247, 251, 0.62);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .level-editor-root {
   position: absolute;
   inset: 0;
@@ -120,21 +199,101 @@ select {
   font: 13px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.level-editor-panel {
+.editor-topbar {
   position: absolute;
   top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: min(380px, calc(100vw - 24px));
-  overflow: auto;
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto minmax(200px, 300px) minmax(260px, auto) minmax(90px, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: min(940px, calc(100vw - 400px));
+  min-height: 48px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
   pointer-events: auto;
+  background: rgba(9, 13, 20, 0.9);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  transform: translateX(-50%);
 }
 
-.level-editor-panel h2 {
-  margin-bottom: 10px;
+.editor-topbar h2 {
+  margin: 0;
+  white-space: nowrap;
 }
 
-.level-editor-panel h3 {
+.editor-dock {
+  position: absolute;
+  top: 72px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(50vw - 24px));
+  padding: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(9, 13, 20, 0.88);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(12px);
+}
+
+.editor-hierarchy-panel {
+  left: 12px;
+}
+
+.editor-inspector-panel {
+  right: 12px;
+}
+
+.editor-dock-header {
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(245, 247, 251, 0.86);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.editor-scene-toolbar {
+  position: absolute;
+  top: 72px;
+  left: 364px;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  pointer-events: auto;
+  background: rgba(9, 13, 20, 0.86);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.editor-scene-toolbar .ui-button {
+  min-height: 32px;
+  padding: 6px 9px;
+}
+
+.editor-shortcuts {
+  position: absolute;
+  left: 364px;
+  bottom: 12px;
+  max-width: min(680px, calc(100vw - 740px));
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: rgba(245, 247, 251, 0.74);
+  pointer-events: none;
+  background: rgba(12, 15, 22, 0.7);
+}
+
+.editor-hierarchy h3,
+.editor-inspector h3 {
   margin: 18px 0 8px;
   color: #8fd0ff;
   font-size: 13px;
@@ -142,14 +301,14 @@ select {
   letter-spacing: 0.08em;
 }
 
-.level-editor-panel h4 {
+.editor-hierarchy h4,
+.editor-inspector h4 {
   margin: 10px 0 6px;
   font-size: 13px;
 }
 
 .editor-name-input {
   width: 100%;
-  margin: 12px 0 4px;
   padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 7px;
@@ -157,17 +316,102 @@ select {
   background: rgba(0, 0, 0, 0.24);
 }
 
-.editor-list,
-.editor-properties {
+.editor-hierarchy,
+.editor-inspector {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
 }
 
-.editor-properties {
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+.editor-hierarchy .editor-button-row {
+  margin-bottom: 6px;
+}
+
+.hierarchy-row.ui-button {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  justify-items: start;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 9px;
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+}
+
+.hierarchy-row.ui-button:hover {
+  border-color: rgba(143, 208, 255, 0.18);
+  background: rgba(143, 208, 255, 0.08);
+}
+
+.hierarchy-row.ui-button.selected {
+  border-color: rgba(143, 208, 255, 0.34);
+  background: rgba(143, 208, 255, 0.15);
+  box-shadow: inset 3px 0 0 #8fd0ff;
+}
+
+.hierarchy-row.depth-1 {
+  padding-left: 26px;
+}
+
+.hierarchy-icon {
+  color: rgba(143, 208, 255, 0.8);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hierarchy-name {
+  overflow: hidden;
+  max-width: 100%;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspector-object-header,
+.inspector-component {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.03)),
+    rgba(0, 0, 0, 0.1);
+}
+
+.inspector-object-header {
+  padding: 10px;
+}
+
+.inspector-object-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.inspector-object-meta {
+  margin-top: 2px;
+  color: rgba(245, 247, 251, 0.58);
+  font-size: 12px;
+}
+
+.inspector-object-actions,
+.inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inspector-component-header {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(245, 247, 251, 0.82);
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.inspector-component-body {
+  padding: 11px;
 }
 
 .ui-field {
@@ -188,8 +432,40 @@ select {
   background: rgba(0, 0, 0, 0.26);
 }
 
+.ui-field.checkbox-field {
+  grid-template-columns: 1fr auto;
+}
+
+.ui-field.checkbox-field input {
+  width: 18px;
+  height: 18px;
+}
+
 .editor-field-group {
   padding: 8px;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.05);
+}
+
+.editor-button-row .ui-button {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 1100px) {
+  .editor-topbar {
+    left: 12px;
+    right: 12px;
+    grid-template-columns: 1fr;
+    width: auto;
+    transform: none;
+  }
+
+  .editor-dock {
+    width: min(300px, calc(50vw - 18px));
+  }
+
+  .editor-scene-toolbar,
+  .editor-shortcuts {
+    left: 324px;
+  }
 }

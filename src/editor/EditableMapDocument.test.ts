@@ -17,10 +17,11 @@ describe("editable map document conversion", () => {
 
   it("uses the bot spawn as a fallback patrol point when none are authored", () => {
     const editable = editableFromMap(BLOCKOUT_MAP_01);
-    editable.spawnPoints.ai[0].patrolPoints = [];
+    const botSpawn = editable.spawnPoints.points.find((point) => point.kind === "bot")!;
+    botSpawn.patrolPoints = [];
 
     const runtime = mapFromEditable(editable);
 
-    expect(runtime.spawnPoints.ai[0].patrolPoints).toEqual([editable.spawnPoints.ai[0].position]);
+    expect(runtime.spawnPoints.ai[0].patrolPoints).toEqual([botSpawn.position]);
   });
 });

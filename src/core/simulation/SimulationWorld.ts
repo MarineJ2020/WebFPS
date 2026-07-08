@@ -41,6 +41,7 @@ const GROUNDED_STICK_VELOCITY = -0.1;
 interface BotRig {
   character: AICharacter;
   controller: CharacterController;
+  spawn: Vec3;
 }
 
 export class SimulationWorld {
@@ -48,6 +49,7 @@ export class SimulationWorld {
   readonly events = new EventBus();
   private readonly physics: PhysicsWorld;
   private readonly playerController: CharacterController;
+  private readonly playerSpawn: Vec3;
   private readonly hitscan: CharacterAwareHitscanQuery;
   private readonly rng: () => number;
   private readonly navMesh: NavMeshService;
@@ -57,6 +59,7 @@ export class SimulationWorld {
     physics: PhysicsWorld,
     player: Player,
     playerController: CharacterController,
+    playerSpawn: Vec3,
     hitscan: CharacterAwareHitscanQuery,
     rng: () => number,
     navMesh: NavMeshService,
@@ -65,6 +68,7 @@ export class SimulationWorld {
     this.physics = physics;
     this.player = player;
     this.playerController = playerController;
+    this.playerSpawn = playerSpawn;
     this.hitscan = hitscan;
     this.rng = rng;
     this.navMesh = navMesh;
@@ -74,7 +78,11 @@ export class SimulationWorld {
       if (!hit.hitEntityId) return;
       const target = this.findCharacter(hit.hitEntityId);
       if (!target || target === this.findCharacter(hit.shooterId)) return;
+      const wasAlive = target.health > 0;
       target.health = Math.max(0, target.health - hit.damage);
+      if (wasAlive && target.health <= 0) {
+        this.events.emit("characterKilled", { killerId: hit.shooterId, victimId: target.id });
+      }
       if (target.health <= 0 && target instanceof AICharacter) {
         target.isDead = true;
       }
@@ -114,7 +122,7 @@ export class SimulationWorld {
         aiSpawn.patrolPoints,
       );
       const controller = createHumanoidController(physics, aiSpawn.position);
-      return { character, controller };
+      return { character, controller, spawn: { ...aiSpawn.position } };
     });
 
     const navMesh = new NavMeshService(session.map.navMeshRegions);
@@ -124,6 +132,7 @@ export class SimulationWorld {
       physics,
       player,
       playerController,
+      { ...spawn },
       characterAwareHitscan,
       rng,
       navMesh,
@@ -147,6 +156,30 @@ export class SimulationWorld {
     }
 
     this.physics.step();
+  }
+
+  respawnCharacter(entityId: string): void {
+    if (entityId === this.player.id) {
+      resetCharacter(this.player);
+      resetPlayerRecoil(this.player);
+      this.player.position = { ...this.playerSpawn };
+      this.playerController.teleport(this.playerSpawn);
+      return;
+    }
+
+    const rig = this.bots.find((bot) => bot.character.id === entityId);
+    if (!rig) return;
+    resetCharacter(rig.character);
+    rig.character.isDead = false;
+    rig.character.fsm.resetTo("idle", rig.character);
+    rig.character.currentPath = [];
+    rig.character.pathTargetIndex = 0;
+    rig.character.lastKnownPlayerPosition = null;
+    rig.character.heardNoisePosition = null;
+    rig.character.timeSinceLastSeenPlayer = Number.POSITIVE_INFINITY;
+    rig.character.heardNoiseTimer = Number.POSITIVE_INFINITY;
+    rig.character.position = { ...rig.spawn };
+    rig.controller.teleport(rig.spawn);
   }
 
   private applyPlayerCommand(dt: number, command: PlayerCommand): void {
@@ -349,4 +382,31 @@ function clamp(value: number, min: number, max: number): number {
 
 function createWeapons(configIds: readonly string[]) {
   return configIds.map((id) => createWeapon(getWeaponConfig(id)));
+}
+
+function resetCharacter(character: Character): void {
+  character.health = character.maxHealth;
+  character.verticalVelocity = 0;
+  character.grounded = false;
+  character.lastFireHeld = false;
+  character.pitch = 0;
+
+  for (const weapon of character.weapons) {
+    const config = getWeaponConfig(weapon.configId);
+    weapon.ammoInMag = config.magazineSize;
+    weapon.ammoReserve = config.reserveAmmoMax;
+    weapon.currentFireModeIndex = config.defaultFireModeIndex;
+    weapon.currentSpread = config.baseSpread;
+    weapon.cooldownTimer = 0;
+    weapon.reloadTimer = 0;
+    weapon.burstState = null;
+  }
+}
+
+function resetPlayerRecoil(player: Player): void {
+  player.recoil.pitch = 0;
+  player.recoil.yaw = 0;
+  player.recoil.pitchVelocity = 0;
+  player.recoil.yawVelocity = 0;
+  player.recoil.shotIndex = 0;
 }

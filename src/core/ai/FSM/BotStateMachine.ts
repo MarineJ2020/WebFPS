@@ -38,6 +38,11 @@ export class BotStateMachine {
     this.current.enter?.(bot, ctx);
   }
 
+  resetTo(name: BotStateName, bot: AICharacter): void {
+    this.current = this.states[name];
+    bot.stateTimer = 0;
+  }
+
   update(bot: AICharacter, ctx: BotContext, dt: number): void {
     this.current.execute(bot, ctx, dt);
   }

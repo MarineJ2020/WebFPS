@@ -2,6 +2,10 @@ import { createButton, createPanel } from "../components/NativeControls";
 
 export interface MainMenuActions {
   onStartGame: () => void;
+  onHostLocal: (roomId: string, playerName: string) => void;
+  onJoinLocal: (roomId: string, playerName: string) => void;
+  onImportLevel: (json: string, fileName: string) => void;
+  onClearImportedLevel: () => void;
   onOpenEditor: () => void;
   onOpenSettings: () => void;
 }
@@ -9,6 +13,10 @@ export interface MainMenuActions {
 export class MainMenu {
   private readonly root: HTMLDivElement;
   private readonly status: HTMLDivElement;
+  private readonly roomInput: HTMLInputElement;
+  private readonly nameInput: HTMLInputElement;
+  private readonly levelInput: HTMLInputElement;
+  private readonly levelLabel: HTMLDivElement;
   private actions: MainMenuActions | null = null;
 
   constructor(container: HTMLElement) {
@@ -34,6 +42,61 @@ export class MainMenu {
     const actions = document.createElement("div");
     actions.className = "menu-actions";
     actions.appendChild(createButton("Start Game", () => this.actions?.onStartGame(), "primary"));
+
+    const levelBox = document.createElement("div");
+    levelBox.className = "menu-option-box";
+    const levelTitle = document.createElement("div");
+    levelTitle.className = "menu-eyebrow";
+    levelTitle.textContent = "Level";
+    levelBox.appendChild(levelTitle);
+
+    this.levelLabel = document.createElement("div");
+    this.levelLabel.className = "menu-option-label";
+    this.levelLabel.textContent = "Built-in blockout";
+    levelBox.appendChild(this.levelLabel);
+
+    this.levelInput = document.createElement("input");
+    this.levelInput.type = "file";
+    this.levelInput.accept = "application/json,.json";
+    this.levelInput.style.display = "none";
+    this.levelInput.addEventListener("change", () => this.importLevelFile());
+    levelBox.appendChild(this.levelInput);
+
+    const levelActions = document.createElement("div");
+    levelActions.className = "editor-button-row";
+    levelActions.appendChild(createButton("Import Level", () => this.levelInput.click()));
+    levelActions.appendChild(createButton("Use Built-in", () => {
+      this.levelInput.value = "";
+      this.setImportedLevelLabel(null);
+      this.actions?.onClearImportedLevel();
+    }));
+    levelBox.appendChild(levelActions);
+    actions.appendChild(levelBox);
+
+    const multiplayer = document.createElement("div");
+    multiplayer.className = "local-multiplayer-box menu-option-box";
+    const multiplayerTitle = document.createElement("div");
+    multiplayerTitle.className = "menu-eyebrow";
+    multiplayerTitle.textContent = "Local Multiplayer";
+    multiplayer.appendChild(multiplayerTitle);
+
+    this.roomInput = document.createElement("input");
+    this.roomInput.placeholder = "Room";
+    this.roomInput.value = "webfps";
+    multiplayer.appendChild(this.roomInput);
+
+    this.nameInput = document.createElement("input");
+    this.nameInput.placeholder = "Name";
+    this.nameInput.value = "Player";
+    multiplayer.appendChild(this.nameInput);
+
+    const multiplayerActions = document.createElement("div");
+    multiplayerActions.className = "editor-button-row";
+    multiplayerActions.appendChild(createButton("Host Game", () => this.actions?.onHostLocal(this.roomInput.value, this.nameInput.value)));
+    multiplayerActions.appendChild(createButton("Join Game", () => this.actions?.onJoinLocal(this.roomInput.value, this.nameInput.value)));
+    multiplayer.appendChild(multiplayerActions);
+    actions.appendChild(multiplayer);
+
     actions.appendChild(createButton("Level Editor", () => this.actions?.onOpenEditor()));
     actions.appendChild(createButton("Settings", () => this.actions?.onOpenSettings()));
     panel.appendChild(actions);
@@ -53,6 +116,10 @@ export class MainMenu {
     this.status.textContent = message;
   }
 
+  setImportedLevelLabel(fileName: string | null): void {
+    this.levelLabel.textContent = fileName ? `Imported: ${fileName}` : "Built-in blockout";
+  }
+
   show(): void {
     this.root.style.display = "flex";
   }
@@ -60,5 +127,17 @@ export class MainMenu {
   hide(): void {
     this.root.style.display = "none";
     this.setStatus("");
+  }
+
+  private importLevelFile(): void {
+    const file = this.levelInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      this.actions?.onImportLevel(String(reader.result), file.name);
+      this.setImportedLevelLabel(file.name);
+      this.levelInput.value = "";
+    });
+    reader.readAsText(file);
   }
 }

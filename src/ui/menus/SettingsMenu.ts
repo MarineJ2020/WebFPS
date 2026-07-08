@@ -94,7 +94,7 @@ export class SettingsMenu {
       font: "14px system-ui, sans-serif",
       alignItems: "center",
       justifyContent: "center",
-      zIndex: "10",
+      zIndex: "30",
     } satisfies Partial<CSSStyleDeclaration>);
 
     const panel = document.createElement("div");
