@@ -13,6 +13,7 @@ export class InputManager {
   private pendingReload = false;
   private pendingSwitchFireMode = false;
   private fireHeld = false;
+  private pointerLockEnabled = true;
   sensitivity = DEFAULT_MOUSE_SENSITIVITY;
 
   constructor(lockTarget: HTMLElement) {
@@ -31,6 +32,10 @@ export class InputManager {
 
   consumeCommand(): PlayerCommand {
     const command = emptyPlayerCommand();
+    if (!this.pointerLockEnabled) {
+      this.clearPendingInput();
+      return command;
+    }
 
     if (this.heldCodes.has(KeyBindings.get("moveForward"))) command.moveZ += 1;
     if (this.heldCodes.has(KeyBindings.get("moveBack"))) command.moveZ -= 1;
@@ -46,13 +51,19 @@ export class InputManager {
     command.reloadRequested = locked && this.pendingReload;
     command.switchFireModeRequested = locked && this.pendingSwitchFireMode;
 
-    this.pendingYawDelta = 0;
-    this.pendingPitchDelta = 0;
-    this.pendingJump = false;
-    this.pendingReload = false;
-    this.pendingSwitchFireMode = false;
+    this.clearPendingInput();
 
     return command;
+  }
+
+  setPointerLockEnabled(enabled: boolean): void {
+    this.pointerLockEnabled = enabled;
+    if (!enabled) {
+      if (this.isPointerLocked) document.exitPointerLock();
+      this.heldCodes.clear();
+      this.fireHeld = false;
+      this.clearPendingInput();
+    }
   }
 
   dispose(): void {
@@ -66,6 +77,7 @@ export class InputManager {
   }
 
   private onClickRequestLock = (): void => {
+    if (!this.pointerLockEnabled) return;
     this.lockTarget.requestPointerLock();
   };
 
@@ -79,19 +91,23 @@ export class InputManager {
   };
 
   private onMouseMove = (event: MouseEvent): void => {
+    if (!this.pointerLockEnabled) return;
     this.pendingYawDelta -= event.movementX * this.sensitivity;
     this.pendingPitchDelta -= event.movementY * this.sensitivity;
   };
 
   private onMouseDown = (event: MouseEvent): void => {
+    if (!this.pointerLockEnabled) return;
     if (event.button === FIRE_BUTTON) this.fireHeld = true;
   };
 
   private onMouseUp = (event: MouseEvent): void => {
+    if (!this.pointerLockEnabled) return;
     if (event.button === FIRE_BUTTON) this.fireHeld = false;
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.pointerLockEnabled) return;
     this.heldCodes.add(event.code);
     if (event.code === KeyBindings.get("jump")) {
       this.pendingJump = true;
@@ -103,6 +119,15 @@ export class InputManager {
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
+    if (!this.pointerLockEnabled) return;
     this.heldCodes.delete(event.code);
   };
+
+  private clearPendingInput(): void {
+    this.pendingYawDelta = 0;
+    this.pendingPitchDelta = 0;
+    this.pendingJump = false;
+    this.pendingReload = false;
+    this.pendingSwitchFireMode = false;
+  }
 }

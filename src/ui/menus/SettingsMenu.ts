@@ -35,6 +35,14 @@ export class SettingsMenu {
     this.onVisibilityChange = callback;
   }
 
+  show(): void {
+    this.setVisible(true);
+  }
+
+  hide(): void {
+    this.setVisible(false);
+  }
+
   toggle(): void {
     this.setVisible(!this.visible);
   }
@@ -49,6 +57,7 @@ export class SettingsMenu {
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.awaitingRebindAction) {
       event.preventDefault();
+      event.stopImmediatePropagation();
       const action = this.awaitingRebindAction;
       this.awaitingRebindAction = null;
       if (event.code !== "Escape") {
@@ -60,8 +69,10 @@ export class SettingsMenu {
       return;
     }
 
-    if (event.code === "Escape") {
-      this.toggle();
+    if (event.code === "Escape" && this.visible) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.hide();
     }
   };
 
@@ -80,7 +91,7 @@ export class SettingsMenu {
       inset: "0",
       background: "rgba(0, 0, 0, 0.65)",
       color: "#fff",
-      font: "14px monospace",
+      font: "14px system-ui, sans-serif",
       alignItems: "center",
       justifyContent: "center",
       zIndex: "10",
@@ -88,9 +99,9 @@ export class SettingsMenu {
 
     const panel = document.createElement("div");
     Object.assign(panel.style, {
-      background: "#1c1c1c",
-      border: "1px solid #444",
-      borderRadius: "6px",
+      background: "rgba(15, 18, 24, 0.95)",
+      border: "1px solid rgba(255, 255, 255, 0.16)",
+      borderRadius: "8px",
       padding: "20px 28px",
       minWidth: "320px",
     } satisfies Partial<CSSStyleDeclaration>);
@@ -127,7 +138,7 @@ export class SettingsMenu {
     }
 
     const resumeButton = document.createElement("button");
-    resumeButton.textContent = "Resume";
+    resumeButton.textContent = "Close";
     resumeButton.style.marginTop = "16px";
     resumeButton.addEventListener("click", () => this.setVisible(false));
     panel.appendChild(resumeButton);

@@ -1,5 +1,7 @@
 export class DeathScreen {
   private readonly root: HTMLDivElement;
+  private readonly restartButton: HTMLButtonElement;
+  private readonly menuButton: HTMLButtonElement;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("div");
@@ -9,7 +11,7 @@ export class DeathScreen {
       inset: "0",
       background: "rgba(40, 0, 0, 0.75)",
       color: "#fff",
-      font: "14px monospace",
+      font: "14px system-ui, sans-serif",
       alignItems: "center",
       justifyContent: "center",
       flexDirection: "column",
@@ -27,17 +29,31 @@ export class DeathScreen {
     } satisfies Partial<CSSStyleDeclaration>);
     this.root.appendChild(title);
 
-    const restartButton = document.createElement("button");
-    restartButton.textContent = "Restart";
-    Object.assign(restartButton.style, {
-      font: "16px monospace",
+    this.restartButton = document.createElement("button");
+    this.restartButton.textContent = "Restart";
+    Object.assign(this.restartButton.style, {
+      font: "16px system-ui, sans-serif",
       padding: "8px 20px",
       cursor: "pointer",
     } satisfies Partial<CSSStyleDeclaration>);
-    restartButton.addEventListener("click", () => window.location.reload());
-    this.root.appendChild(restartButton);
+    this.root.appendChild(this.restartButton);
+
+    this.menuButton = document.createElement("button");
+    this.menuButton.textContent = "Main Menu";
+    Object.assign(this.menuButton.style, {
+      font: "16px system-ui, sans-serif",
+      padding: "8px 20px",
+      marginTop: "10px",
+      cursor: "pointer",
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.root.appendChild(this.menuButton);
 
     container.appendChild(this.root);
+  }
+
+  setActions(actions: { onRestart: () => void; onMainMenu: () => void }): void {
+    this.restartButton.onclick = actions.onRestart;
+    this.menuButton.onclick = actions.onMainMenu;
   }
 
   show(): void {

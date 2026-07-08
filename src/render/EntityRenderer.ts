@@ -47,6 +47,15 @@ export class EntityRenderer {
     }
   }
 
+  clear(): void {
+    for (const mesh of this.meshesById.values()) {
+      this.scene.remove(mesh);
+      disposeObject3D(mesh);
+    }
+    this.meshesById.clear();
+    this.gunLoadStarted.clear();
+  }
+
   private attachGunModel(bot: AICharacter, mesh: THREE.Mesh): void {
     if (this.gunLoadStarted.has(bot.id)) return;
     this.gunLoadStarted.add(bot.id);
@@ -63,4 +72,15 @@ export class EntityRenderer {
       mesh.add(gunRoot);
     });
   }
+}
+
+function disposeObject3D(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      const material = child.material;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else material.dispose();
+    }
+  });
 }

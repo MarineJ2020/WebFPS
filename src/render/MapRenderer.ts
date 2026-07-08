@@ -2,15 +2,46 @@ import * as THREE from "three";
 import type { MapDefinition, MapVolume } from "../data/maps/MapDefinition";
 import { VOLUME_COLOR } from "../data/maps/MapDefinition";
 
-export function buildMapMeshes(scene: THREE.Scene, map: MapDefinition): THREE.Mesh[] {
-  const meshes = map.volumes.map(buildVolumeMesh);
-  for (const mesh of meshes) {
-    scene.add(mesh);
+export class MapSceneController {
+  private readonly scene: THREE.Scene;
+  private readonly meshes: THREE.Mesh[] = [];
+
+  constructor(scene: THREE.Scene) {
+    this.scene = scene;
   }
-  return meshes;
+
+  load(map: MapDefinition): THREE.Mesh[] {
+    this.clear();
+    for (const volume of map.volumes) {
+      const mesh = buildVolumeMesh(volume);
+      this.meshes.push(mesh);
+      this.scene.add(mesh);
+    }
+    return this.getHitscanTargets();
+  }
+
+  getHitscanTargets(): THREE.Mesh[] {
+    return [...this.meshes];
+  }
+
+  clear(): void {
+    for (const mesh of this.meshes) {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      const material = mesh.material;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else material.dispose();
+    }
+    this.meshes.length = 0;
+  }
 }
 
-function buildVolumeMesh(volume: MapVolume): THREE.Mesh {
+export function buildMapMeshes(scene: THREE.Scene, map: MapDefinition): THREE.Mesh[] {
+  const controller = new MapSceneController(scene);
+  return controller.load(map);
+}
+
+export function buildVolumeMesh(volume: MapVolume): THREE.Mesh {
   const geometry = new THREE.BoxGeometry(
     volume.halfExtents.x * 2,
     volume.halfExtents.y * 2,

@@ -4,12 +4,15 @@ import { Player, PLAYER_EYE_HEIGHT } from "../entities/Player";
 import type { Character } from "../entities/Character";
 import { AICharacter, AI_EYE_HEIGHT, AI_MOVE_SPEED } from "../entities/AICharacter";
 import type { PlayerCommand } from "./commands/PlayerCommand";
-import { BLOCKOUT_MAP_01 } from "../../data/maps/blockoutMap01";
 import { EventBus } from "../EventBus";
 import type { IHitscanQuery } from "../physics/raycast/IHitscanQuery";
 import { CharacterAwareHitscanQuery } from "../physics/raycast/CharacterAwareHitscanQuery";
 import { createWeapon } from "../entities/weapons/Weapon";
-import { ASSAULT_RIFLE_01, BOT_RIFLE_01, getWeaponConfig } from "../../data/weapons/weaponTypes";
+import { getWeaponConfig } from "../../data/weapons/weaponTypes";
+import {
+  createDefaultSessionDefinition,
+  type GameSessionDefinition,
+} from "../../data/session/GameSessionDefinition";
 import {
   cycleFireMode,
   startReload,
@@ -88,28 +91,33 @@ export class SimulationWorld {
     }
   }
 
-  static async create(hitscan: IHitscanQuery, rng: () => number = Math.random): Promise<SimulationWorld> {
+  static async create(
+    hitscan: IHitscanQuery,
+    session: GameSessionDefinition = createDefaultSessionDefinition(),
+    rng: () => number = Math.random,
+  ): Promise<SimulationWorld> {
     const physics = await PhysicsWorld.create();
-    for (const volume of BLOCKOUT_MAP_01.volumes) {
+    for (const volume of session.map.volumes) {
       physics.createStaticCuboid(volume.halfExtents, volume.position, volume.rotation);
     }
 
-    const spawn = BLOCKOUT_MAP_01.spawnPoints.player;
-    const player = new Player("local-player", spawn, [createWeapon(ASSAULT_RIFLE_01)]);
+    const spawn = session.map.spawnPoints.player;
+    const player = new Player("local-player", spawn, createWeapons(session.player.weaponConfigIds));
     const playerController = createHumanoidController(physics, spawn);
 
-    const bots: BotRig[] = BLOCKOUT_MAP_01.spawnPoints.ai.map((aiSpawn, index) => {
+    const bots: BotRig[] = session.map.spawnPoints.ai.map((aiSpawn, index) => {
+      const botDefinition = session.bots[index] ?? session.bots[0] ?? { weaponConfigIds: [] };
       const character = new AICharacter(
-        `bot-${index}`,
+        botDefinition.id ?? `bot-${index}`,
         aiSpawn.position,
-        [createWeapon(BOT_RIFLE_01)],
+        createWeapons(botDefinition.weaponConfigIds),
         aiSpawn.patrolPoints,
       );
       const controller = createHumanoidController(physics, aiSpawn.position);
       return { character, controller };
     });
 
-    const navMesh = new NavMeshService(BLOCKOUT_MAP_01.navMeshRegions);
+    const navMesh = new NavMeshService(session.map.navMeshRegions);
     const characterAwareHitscan = new CharacterAwareHitscanQuery(hitscan);
 
     return new SimulationWorld(
@@ -337,4 +345,8 @@ function applyGroundMovement(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function createWeapons(configIds: readonly string[]) {
+  return configIds.map((id) => createWeapon(getWeaponConfig(id)));
 }

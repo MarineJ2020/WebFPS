@@ -4,14 +4,15 @@ const CROSSHAIR_MIN_GAP = 4;
 const CROSSHAIR_MAX_GAP = 16;
 
 export class HUD {
+  private readonly root: HTMLDivElement;
   private readonly ammoText: HTMLDivElement;
   private readonly healthText: HTMLDivElement;
   private readonly healthBarFill: HTMLDivElement;
   private readonly crosshairLines: { top: HTMLDivElement; bottom: HTMLDivElement; left: HTMLDivElement; right: HTMLDivElement };
 
   constructor(container: HTMLElement) {
-    const root = document.createElement("div");
-    Object.assign(root.style, {
+    this.root = document.createElement("div");
+    Object.assign(this.root.style, {
       position: "absolute",
       inset: "0",
       pointerEvents: "none",
@@ -19,11 +20,11 @@ export class HUD {
       color: "#fff",
       textShadow: "0 0 4px #000",
     } satisfies Partial<CSSStyleDeclaration>);
-    container.appendChild(root);
+    container.appendChild(this.root);
 
     this.ammoText = document.createElement("div");
     Object.assign(this.ammoText.style, { position: "absolute", left: "16px", bottom: "16px" } satisfies Partial<CSSStyleDeclaration>);
-    root.appendChild(this.ammoText);
+    this.root.appendChild(this.ammoText);
 
     const healthPanel = document.createElement("div");
     Object.assign(healthPanel.style, {
@@ -32,7 +33,7 @@ export class HUD {
       bottom: "44px",
       width: "160px",
     } satisfies Partial<CSSStyleDeclaration>);
-    root.appendChild(healthPanel);
+    this.root.appendChild(healthPanel);
 
     this.healthText = document.createElement("div");
     this.healthText.style.marginBottom = "2px";
@@ -65,7 +66,7 @@ export class HUD {
       width: "0",
       height: "0",
     } satisfies Partial<CSSStyleDeclaration>);
-    root.appendChild(crosshairRoot);
+    this.root.appendChild(crosshairRoot);
 
     const makeCrosshairLine = (): HTMLDivElement => {
       const line = document.createElement("div");
@@ -106,6 +107,10 @@ export class HUD {
     } satisfies Partial<CSSStyleDeclaration>);
 
     this.setCrosshairSpread(0);
+  }
+
+  setVisible(visible: boolean): void {
+    this.root.style.display = visible ? "block" : "none";
   }
 
   setAmmoStatus(fireModeKind: string, ammoInMag: number, ammoReserve: number, reloading: boolean): void {
