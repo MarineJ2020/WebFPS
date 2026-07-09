@@ -15,7 +15,8 @@ import type { GameModeState } from "./GameModeState";
 import { SessionController } from "./SessionController";
 import { Scoreboard, type ScoreboardRow } from "../ui/hud/Scoreboard";
 import { LanMultiplayerClient } from "../net/LanMultiplayerClient";
-import type { LanLobbyState, LanMatchSnapshot, LanRoomSummary } from "../net/LanProtocol";
+import { NetworkSnapshotBuffer } from "../net/NetworkSnapshotBuffer";
+import type { LanLobbyState, LanMatchSnapshot, LanRoomSummary, LanShotEvent } from "../net/LanProtocol";
 import { ASSAULT_RIFLE_01 } from "../data/weapons/weaponTypes";
 
 const RESPAWN_SECONDS = 3;
@@ -38,6 +39,8 @@ export class Game {
   private lanSelfId = "";
   private lanLobby: LanLobbyState | null = null;
   private lanSnapshot: LanMatchSnapshot | null = null;
+  private readonly lanSnapshotBuffer = new NetworkSnapshotBuffer();
+  private readonly pendingLanShots: LanShotEvent[] = [];
   private lanMatchActive = false;
   private lanWeaponBound = false;
   private lastKillerName = "";
@@ -125,6 +128,8 @@ export class Game {
       onStartMatch: () => this.lanClient.startMatch(),
       onLeave: () => this.showMainMenu(),
     });
+    this.ui.matchFlowOverlay.onVoteRematch = () => this.lanClient.voteRematch();
+    this.ui.matchFlowOverlay.onReturnToLobby = () => this.lanClient.returnToLobby();
 
     this.ui.setDeathActions({
       onRestart: () => void this.restartGame(),
@@ -173,6 +178,8 @@ export class Game {
     if (this.lanLobby || this.lanMatchActive) this.lanClient.leaveRoom();
     this.lanLobby = null;
     this.lanSnapshot = null;
+    this.lanSnapshotBuffer.clear();
+    this.pendingLanShots.length = 0;
     this.lanMatchActive = false;
     this.lanWeaponBound = false;
     this.sessions.clear();
@@ -187,6 +194,8 @@ export class Game {
     if (this.lanLobby || this.lanMatchActive) this.lanClient.leaveRoom();
     this.lanLobby = null;
     this.lanSnapshot = null;
+    this.lanSnapshotBuffer.clear();
+    this.pendingLanShots.length = 0;
     this.lanMatchActive = false;
     this.lanWeaponBound = false;
     this.sessions.clear();
@@ -264,14 +273,25 @@ export class Game {
     if (!snapshot) return;
     const localPlayer = snapshot.players.find((player) => player.id === this.lanSelfId);
     if (!localPlayer) return;
+    const acceptsInput = snapshot.phase === "warmup" || snapshot.phase === "countdown" || snapshot.phase === "live";
+    this.inputManager.setPointerLockEnabled(this.mode === "playing" && acceptsInput && !localPlayer.dead);
 
-    const command = this.mode === "playing" && !localPlayer.dead
+    const command = this.mode === "playing" && acceptsInput && !localPlayer.dead
       ? this.inputManager.consumeCommand()
       : emptyPlayerCommand();
     this.lanClient.sendInput(command);
-    this.renderWorld.updateNetwork(frameDelta, localPlayer, snapshot, command.yawDelta, command.pitchDelta);
+    const renderSnapshot = this.lanSnapshotBuffer.sample() ?? snapshot;
+    this.renderWorld.updateNetwork(
+      frameDelta,
+      localPlayer,
+      { ...renderSnapshot, shots: this.pendingLanShots.splice(0) },
+      command.yawDelta,
+      command.pitchDelta,
+    );
     this.updateNetworkHUD(localPlayer);
     this.updateNetworkScoreboard(snapshot);
+    this.ui.matchFlowOverlay.update(snapshot);
+    if (snapshot.phase === "roundEnd" || snapshot.phase === "rematch") this.scoreboard.setVisible(true);
 
     if (localPlayer.dead) {
       this.ui.deathScreen.setRespawnCountdown(localPlayer.respawnRemaining, this.lastKillerName);
@@ -392,12 +412,25 @@ export class Game {
   private onLanLobby(lobby: LanLobbyState): void {
     this.lanLobby = lobby;
     this.ui.localLobbyMenu.setLobby(lobby, this.lanSelfId);
+    if (lobby.phase === "lobby") {
+      this.lanMatchActive = false;
+      this.lanSnapshot = null;
+      this.lanSnapshotBuffer.clear();
+      this.pendingLanShots.length = 0;
+      this.lanWeaponBound = false;
+      this.renderWorld.clearSimulationBindings();
+      this.clearDeathmatchBindings();
+      this.setMode("localLobby");
+      return;
+    }
     if (!this.lanMatchActive) this.setMode("localLobby");
   }
 
   private async onLanMatchStarted(map: MapDefinition): Promise<void> {
     this.lanMatchActive = true;
     this.lanSnapshot = null;
+    this.lanSnapshotBuffer.clear();
+    this.pendingLanShots.length = 0;
     this.lanWeaponBound = false;
     this.simulation = null;
     this.sessions.clear();
@@ -412,6 +445,8 @@ export class Game {
 
   private onLanSnapshot(snapshot: LanMatchSnapshot): void {
     this.lanSnapshot = snapshot;
+    this.lanSnapshotBuffer.push(snapshot);
+    this.pendingLanShots.push(...snapshot.shots);
     const localKill = snapshot.kills.find((kill) => kill.victimId === this.lanSelfId);
     if (localKill) this.lastKillerName = localKill.killerName;
     if (!this.lanWeaponBound) {

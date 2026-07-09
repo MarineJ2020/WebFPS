@@ -88,7 +88,7 @@ function handleMessage(client: ClientSocket, message: LanClientMessage): void {
       broadcastLobby(room.id);
       broadcastRoomList();
       cancelIdleShutdown();
-      if (room.phase === "playing") send(client, { type: "matchStarted", roomId: room.id, map: room.map });
+      if (room.phase !== "lobby") send(client, { type: "matchStarted", roomId: room.id, map: room.map });
       break;
     }
     case "leaveRoom": {
@@ -121,6 +121,23 @@ function handleMessage(client: ClientSocket, message: LanClientMessage): void {
       broadcastRoomList();
       break;
     }
+    case "voteRematch": {
+      const roomId = rooms.getClientRoomId(client.id);
+      const match = roomId ? matches.get(roomId) : null;
+      match?.simulation.voteRematch(client.id);
+      break;
+    }
+    case "returnToLobby": {
+      const roomId = rooms.getClientRoomId(client.id);
+      if (!roomId) return;
+      matches.delete(roomId);
+      rooms.setRoomPhase(roomId, "lobby");
+      broadcastLobby(roomId);
+      broadcastRoomList();
+      break;
+    }
+    case "ready":
+      break;
     case "input": {
       const roomId = rooms.getClientRoomId(client.id);
       const match = roomId ? matches.get(roomId) : null;
@@ -160,15 +177,24 @@ setInterval(() => {
   const nowMs = performance.now();
   for (const [roomId, match] of matches) {
     const room = rooms.getRoom(roomId);
-    if (!room || room.phase !== "playing") {
+    if (!room || room.phase === "lobby") {
       matches.delete(roomId);
       continue;
     }
 
     match.simulation.update(SIM_TICK_MS / 1000, nowSeconds);
+    if (match.simulation.shouldReturnToLobby(nowSeconds)) {
+      matches.delete(roomId);
+      rooms.setRoomPhase(roomId, "lobby");
+      broadcastLobby(roomId);
+      broadcastRoomList();
+      continue;
+    }
     if (nowMs - match.lastSnapshotAt >= SNAPSHOT_MS) {
       match.lastSnapshotAt = nowMs;
-      broadcastToRoom(roomId, { type: "snapshot", snapshot: match.simulation.snapshot(nowSeconds) });
+      const snapshot = match.simulation.snapshot(nowSeconds);
+      rooms.setRoomPhase(roomId, snapshot.phase);
+      broadcastToRoom(roomId, { type: "snapshot", snapshot });
     }
   }
 }, SIM_TICK_MS);

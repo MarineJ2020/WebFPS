@@ -3,7 +3,9 @@ import type { Vec3 } from "../core/entities/Entity";
 import type { MapDefinition } from "../data/maps/MapDefinition";
 
 export type LocalTeam = "A" | "B";
-export type LanRoomPhase = "lobby" | "playing";
+export type LanMatchPhase = "lobby" | "warmup" | "countdown" | "live" | "roundEnd" | "rematch";
+export type LanRoomPhase = LanMatchPhase;
+export type LanPickupKind = "ammo_box" | "health_pack";
 
 export interface LanRoomPlayer {
   id: string;
@@ -58,6 +60,7 @@ export interface LanShotEvent {
   shooterId: string;
   from: Vec3;
   to: Vec3;
+  impactKind?: "world" | "character";
 }
 
 export interface LanKillEvent {
@@ -67,11 +70,27 @@ export interface LanKillEvent {
   victimName: string;
 }
 
+export interface LanPickupSnapshot {
+  id: string;
+  kind: LanPickupKind;
+  position: Vec3;
+  amount: number;
+  expiresAt: number;
+}
+
 export interface LanMatchSnapshot {
   roomId: string;
   serverTime: number;
+  phase: LanMatchPhase;
+  phaseRemaining: number;
+  scoreLimit: number;
+  timeLimit: number;
+  winner: string | null;
+  rematchVotes: number;
+  rematchNeeded: number;
   players: LanCharacterSnapshot[];
   bots: LanCharacterSnapshot[];
+  pickups: LanPickupSnapshot[];
   shots: LanShotEvent[];
   kills: LanKillEvent[];
 }
@@ -83,6 +102,9 @@ export type LanClientMessage =
   | { type: "leaveRoom" }
   | { type: "setTeam"; team: LocalTeam }
   | { type: "startMatch" }
+  | { type: "voteRematch" }
+  | { type: "returnToLobby" }
+  | { type: "ready" }
   | { type: "input"; sequence: number; command: PlayerCommand }
   | { type: "ping"; clientTime: number };
 

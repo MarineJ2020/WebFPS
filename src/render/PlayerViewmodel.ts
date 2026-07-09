@@ -21,7 +21,7 @@ const MODEL_ROTATION_EULER = new THREE.Euler(0, 90+45, 0);
 const MODEL_LOCAL_OFFSET = new THREE.Vector3(0.2, -0.2, -0.2);
 const MUZZLE_LOCAL_OFFSET = new THREE.Vector3(0, 0, -0.6);
 
-/** Placeholder-primitive or real animated gun, parented to the camera so it rides along with view/recoil motion. */
+/** Placeholder-primitive or real animated gun, rendered in a separate first-person scene so world geometry cannot clip it. */
 export class PlayerViewmodel {
   private readonly group = new THREE.Group();
   private readonly muzzleFlash = new MuzzleFlash();
@@ -32,9 +32,9 @@ export class PlayerViewmodel {
   private currentConfigId: string | null = null;
   private loadToken = 0;
 
-  constructor(camera: THREE.Camera) {
+  constructor(scene: THREE.Scene) {
     this.group.position.copy(VIEWMODEL_OFFSET);
-    camera.add(this.group);
+    scene.add(this.group);
     this.group.add(this.muzzleFlash.object);
   }
 

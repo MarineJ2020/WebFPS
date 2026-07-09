@@ -53,6 +53,14 @@ export class LanMultiplayerClient {
     this.send({ type: "startMatch" });
   }
 
+  voteRematch(): void {
+    this.send({ type: "voteRematch" });
+  }
+
+  returnToLobby(): void {
+    this.send({ type: "returnToLobby" });
+  }
+
   sendInput(command: PlayerCommand): void {
     this.send({ type: "input", sequence: this.inputSequence++, command });
   }

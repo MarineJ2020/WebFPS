@@ -1,0 +1,19 @@
+[
+  {
+    "id": "deathmatch",
+    "displayName": "Deathmatch",
+    "scoreLimit": 25,
+    "timeLimitSeconds": 600,
+    "warmupSeconds": 15,
+    "countdownSeconds": 5,
+    "roundEndSeconds": 10,
+    "rematchSeconds": 20,
+    "respawnSeconds": 3,
+    "pickup": {
+      "healthDropChance": 0.35,
+      "healthAmount": 35,
+      "pickupLifetimeSeconds": 20,
+      "pickupRadius": 1.25
+    }
+  }
+]

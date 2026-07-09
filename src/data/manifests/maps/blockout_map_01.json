@@ -1,0 +1,65 @@
+{
+  "id": "blockout_map_01",
+  "displayName": "Blockout Map 01",
+  "definition": {
+    "volumes": [
+      { "kind": "floor", "halfExtents": { "x": 6, "y": 0.5, "z": 6 }, "position": { "x": 0, "y": -0.5, "z": 6 } },
+      { "kind": "wall", "halfExtents": { "x": 6, "y": 2, "z": 0.25 }, "position": { "x": 0, "y": 2, "z": 0 } },
+      { "kind": "wall", "halfExtents": { "x": 0.25, "y": 2, "z": 6 }, "position": { "x": -6, "y": 2, "z": 6 } },
+      { "kind": "wall", "halfExtents": { "x": 0.25, "y": 2, "z": 6 }, "position": { "x": 6, "y": 2, "z": 6 } },
+      { "kind": "wall", "halfExtents": { "x": 2.25, "y": 2, "z": 0.25 }, "position": { "x": -3.75, "y": 2, "z": 12 } },
+      { "kind": "wall", "halfExtents": { "x": 2.25, "y": 2, "z": 0.25 }, "position": { "x": 3.75, "y": 2, "z": 12 } },
+      { "kind": "floor", "halfExtents": { "x": 1.5, "y": 0.5, "z": 4 }, "position": { "x": 0, "y": -0.5, "z": 16 } },
+      { "kind": "wall", "halfExtents": { "x": 0.25, "y": 2, "z": 4 }, "position": { "x": -1.5, "y": 2, "z": 16 } },
+      { "kind": "wall", "halfExtents": { "x": 0.25, "y": 2, "z": 4 }, "position": { "x": 1.5, "y": 2, "z": 16 } },
+      { "kind": "floor", "halfExtents": { "x": 8, "y": 0.5, "z": 8 }, "position": { "x": 0, "y": -0.5, "z": 28 } },
+      { "kind": "wall", "halfExtents": { "x": 3.25, "y": 2, "z": 0.25 }, "position": { "x": -4.75, "y": 2, "z": 20 } },
+      { "kind": "wall", "halfExtents": { "x": 3.25, "y": 2, "z": 0.25 }, "position": { "x": 4.75, "y": 2, "z": 20 } },
+      { "kind": "wall", "halfExtents": { "x": 0.25, "y": 2, "z": 8 }, "position": { "x": -8, "y": 2, "z": 28 } },
+      { "kind": "wall", "halfExtents": { "x": 0.25, "y": 2, "z": 8 }, "position": { "x": 8, "y": 2, "z": 28 } },
+      { "kind": "wall", "halfExtents": { "x": 8, "y": 2, "z": 0.25 }, "position": { "x": 0, "y": 2, "z": 36 } },
+      {
+        "kind": "ramp",
+        "halfExtents": { "x": 3, "y": 0.1, "z": 1 },
+        "position": { "x": 0, "y": 0.19104275004359958, "z": 29 },
+        "rotation": { "x": -0.15239118601945144, "y": 0, "z": 0, "w": 0.9883209680166017 }
+      },
+      { "kind": "floor", "halfExtents": { "x": 3, "y": 0.1, "z": 3 }, "position": { "x": 0, "y": 0.5, "z": 33 } },
+      { "kind": "cover", "halfExtents": { "x": 0.75, "y": 0.5, "z": 0.75 }, "position": { "x": -4, "y": 0.5, "z": 23 } },
+      { "kind": "cover", "halfExtents": { "x": 0.75, "y": 0.5, "z": 0.75 }, "position": { "x": 4, "y": 0.5, "z": 25 } },
+      { "kind": "cover", "halfExtents": { "x": 0.75, "y": 0.5, "z": 0.75 }, "position": { "x": -5, "y": 0.5, "z": 32 } }
+    ],
+    "navMeshRegions": [
+      [{ "x": -6, "y": 0, "z": 0 }, { "x": -6, "y": 0, "z": 12 }, { "x": -0.9, "y": 0, "z": 12 }, { "x": -0.9, "y": 0, "z": 0 }],
+      [{ "x": -0.9, "y": 0, "z": 0 }, { "x": -0.9, "y": 0, "z": 12 }, { "x": 0.9, "y": 0, "z": 12 }, { "x": 0.9, "y": 0, "z": 0 }],
+      [{ "x": 0.9, "y": 0, "z": 0 }, { "x": 0.9, "y": 0, "z": 12 }, { "x": 6, "y": 0, "z": 12 }, { "x": 6, "y": 0, "z": 0 }],
+      [{ "x": -0.9, "y": 0, "z": 12 }, { "x": -0.9, "y": 0, "z": 20 }, { "x": 0.9, "y": 0, "z": 20 }, { "x": 0.9, "y": 0, "z": 12 }],
+      [{ "x": -8, "y": 0, "z": 20 }, { "x": -8, "y": 0, "z": 28 }, { "x": -0.9, "y": 0, "z": 28 }, { "x": -0.9, "y": 0, "z": 20 }],
+      [{ "x": -0.9, "y": 0, "z": 20 }, { "x": -0.9, "y": 0, "z": 28 }, { "x": 0.9, "y": 0, "z": 28 }, { "x": 0.9, "y": 0, "z": 20 }],
+      [{ "x": 0.9, "y": 0, "z": 20 }, { "x": 0.9, "y": 0, "z": 28 }, { "x": 8, "y": 0, "z": 28 }, { "x": 8, "y": 0, "z": 20 }]
+    ],
+    "spawnPoints": {
+      "player": { "x": 0, "y": 0.1, "z": 6 },
+      "ai": [
+        {
+          "position": { "x": 6, "y": 0.1, "z": 22 },
+          "patrolPoints": [
+            { "x": 6, "y": 0.1, "z": 22 },
+            { "x": 6, "y": 0.1, "z": 27 }
+          ]
+        },
+        {
+          "position": { "x": -6, "y": 0.1, "z": 22 },
+          "patrolPoints": [
+            { "x": -6, "y": 0.1, "z": 22 },
+            { "x": -6, "y": 0.1, "z": 27 }
+          ]
+        }
+      ],
+      "points": [
+        { "kind": "player", "team": "A", "position": { "x": 0, "y": 0.1, "z": 6 } },
+        { "kind": "player", "team": "B", "position": { "x": 0, "y": 0.1, "z": 30 } }
+      ]
+    }
+  }
+}

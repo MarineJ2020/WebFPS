@@ -11,6 +11,7 @@ import { MAX_PLAYER_PITCH } from "../config/constants";
 import type { MapDefinition, MapVolume } from "../data/maps/MapDefinition";
 import { createDefaultSessionDefinition } from "../data/session/GameSessionDefinition";
 import { getWeaponConfig, ASSAULT_RIFLE_01, BOT_RIFLE_01 } from "../data/weapons/weaponTypes";
+import { DeathmatchGameMode } from "../core/gamemode/DeathmatchGameMode";
 import {
   cycleFireMode,
   startReload,
@@ -35,7 +36,6 @@ const BOT_VIEW_RANGE = 26;
 const GRAVITY_Y = -9.81;
 const JUMP_SPEED = 6;
 const FLOOR_Y = 0.1;
-const RESPAWN_SECONDS = 3;
 const BOT_REACTION_SECONDS = 0.25;
 
 interface PlayerRig {
@@ -44,8 +44,6 @@ interface PlayerRig {
   team: LocalTeam;
   spawn: Vec3;
   command: PlayerCommand;
-  kills: number;
-  deaths: number;
   dead: boolean;
   respawnAt: number;
 }
@@ -55,8 +53,6 @@ interface BotRig {
   name: string;
   team: LocalTeam;
   spawn: Vec3;
-  kills: number;
-  deaths: number;
   dead: boolean;
   respawnAt: number;
   reactionTimer: number;
@@ -68,12 +64,14 @@ export class LanMatchSimulation {
   private readonly hitscan: CharacterAwareHitscanQuery;
   private readonly players = new Map<string, PlayerRig>();
   private readonly bots: BotRig[] = [];
+  private readonly gameMode: DeathmatchGameMode;
   private readonly pendingShots: LanShotEvent[] = [];
   private readonly pendingKills: LanKillEvent[] = [];
 
   constructor(roomId: string, roomPlayers: readonly LanRoomPlayer[], map = createDefaultSessionDefinition().map) {
     this.roomId = roomId;
     this.hitscan = new CharacterAwareHitscanQuery(new VolumeHitscanQuery(map.volumes));
+    this.gameMode = new DeathmatchGameMode({ now: performanceNowSeconds() });
 
     const teamSpawnState: Record<LocalTeam, number> = { A: 0, B: 0 };
     for (const player of roomPlayers) {
@@ -84,8 +82,6 @@ export class LanMatchSimulation {
         team: player.team,
         spawn,
         command: emptyPlayerCommand(),
-        kills: 0,
-        deaths: 0,
         dead: false,
         respawnAt: 0,
       });
@@ -96,8 +92,6 @@ export class LanMatchSimulation {
       name: `Bot ${index + 1}`,
       team: "B",
       spawn: { ...spawn.position },
-      kills: 0,
-      deaths: 0,
       dead: false,
       respawnAt: 0,
       reactionTimer: BOT_REACTION_SECONDS,
@@ -112,6 +106,7 @@ export class LanMatchSimulation {
           y: event.origin.y + event.direction.y * event.range,
           z: event.origin.z + event.direction.z * event.range,
         },
+        impactKind: undefined,
       });
     });
 
@@ -119,7 +114,7 @@ export class LanMatchSimulation {
   }
 
   get respawnSeconds(): number {
-    return RESPAWN_SECONDS;
+    return this.gameMode.respawnSeconds;
   }
 
   setInput(playerId: string, command: PlayerCommand): void {
@@ -129,12 +124,15 @@ export class LanMatchSimulation {
   }
 
   update(dt: number, now: number): void {
+    this.gameMode.update(now, [...this.players.keys()]);
+
     for (const rig of this.players.values()) {
       if (rig.dead) {
         if (now >= rig.respawnAt) this.respawnPlayer(rig);
         continue;
       }
-      this.updatePlayer(rig, dt);
+      if (this.gameMode.canMoveAndShoot()) this.updatePlayer(rig, dt);
+      this.gameMode.collectPickups(rig.player, now);
     }
 
     for (const rig of this.bots) {
@@ -142,18 +140,41 @@ export class LanMatchSimulation {
         if (now >= rig.respawnAt) this.respawnBot(rig);
         continue;
       }
-      this.updateBot(rig, dt);
+      if (this.gameMode.canMoveAndShoot()) this.updateBot(rig, dt);
     }
+  }
+
+  voteRematch(playerId: string): void {
+    this.gameMode.voteRematch(playerId);
+  }
+
+  resetForRematch(now: number): void {
+    this.gameMode.resetForRematch(now);
+    for (const rig of this.players.values()) this.respawnPlayer(rig);
+    for (const rig of this.bots) this.respawnBot(rig);
+  }
+
+  shouldReturnToLobby(now: number): boolean {
+    return this.gameMode.shouldReturnToLobby(now);
   }
 
   snapshot(now: number): LanMatchSnapshot {
     const shots = this.pendingShots.splice(0);
     const kills = this.pendingKills.splice(0);
+    const phase = this.gameMode.getPhaseState(now, [...this.players.keys()]);
     return {
       roomId: this.roomId,
       serverTime: now,
+      phase: phase.phase,
+      phaseRemaining: phase.phaseRemaining,
+      scoreLimit: this.gameMode.scoreLimit,
+      timeLimit: this.gameMode.timeLimit,
+      winner: phase.winner,
+      rematchVotes: phase.rematchVotes,
+      rematchNeeded: phase.rematchNeeded,
       players: [...this.players.values()].map((rig) => this.snapshotRig(rig, now)),
       bots: this.bots.map((rig) => this.snapshotRig(rig, now)),
+      pickups: [...this.gameMode.pickups],
       shots,
       kills,
     };
@@ -239,25 +260,40 @@ export class LanMatchSimulation {
   private applyDamage(shooterId: string, targetId: string | undefined, damage: number, point: Vec3): void {
     if (!targetId) {
       const pending = this.pendingShots.at(-1);
-      if (pending && pending.shooterId === shooterId) pending.to = point;
+      if (pending && pending.shooterId === shooterId) {
+        pending.to = point;
+        pending.impactKind = "world";
+      }
       return;
     }
 
     const target = this.findRig(targetId);
     const shooter = this.findRig(shooterId);
-    if (!target || !shooter || target.dead || target.team === shooter.team) return;
+    if (!target || !shooter || target.dead || target.team === shooter.team || !this.gameMode.canDealDamage()) return;
 
     target.character.health = Math.max(0, target.character.health - damage);
     const pending = this.pendingShots.at(-1);
-    if (pending && pending.shooterId === shooterId) pending.to = point;
+    if (pending && pending.shooterId === shooterId) {
+      pending.to = point;
+      pending.impactKind = "character";
+    }
 
     if (target.character.health > 0) return;
 
     target.dead = true;
-    target.respawnAt = performanceNowSeconds() + RESPAWN_SECONDS;
-    target.deaths += 1;
-    shooter.kills += 1;
+    const now = performanceNowSeconds();
+    target.respawnAt = now + this.gameMode.respawnSeconds;
     if (target.character instanceof AICharacter) target.character.isDead = true;
+    this.gameMode.recordKill({
+      killerId: shooterId,
+      killerName: shooter.name,
+      killerTeam: shooter.team,
+      victimId: targetId,
+      victimName: target.name,
+      victimTeam: target.team,
+      victimPosition: target.character.position,
+      now,
+    });
 
     this.pendingKills.push({
       killerId: shooterId,
@@ -336,8 +372,6 @@ export class LanMatchSimulation {
     character: Character;
     name: string;
     team: LocalTeam;
-    kills: number;
-    deaths: number;
     dead: boolean;
     respawnAt: number;
   } | null {
@@ -347,10 +381,6 @@ export class LanMatchSimulation {
         get character() { return player.player; },
         get name() { return player.name; },
         get team() { return player.team; },
-        get kills() { return player.kills; },
-        set kills(value) { player.kills = value; },
-        get deaths() { return player.deaths; },
-        set deaths(value) { player.deaths = value; },
         get dead() { return player.dead; },
         set dead(value) { player.dead = value; },
         get respawnAt() { return player.respawnAt; },
@@ -364,10 +394,6 @@ export class LanMatchSimulation {
       get character() { return bot.bot; },
       get name() { return bot.name; },
       get team() { return bot.team; },
-      get kills() { return bot.kills; },
-      set kills(value) { bot.kills = value; },
-      get deaths() { return bot.deaths; },
-      set deaths(value) { bot.deaths = value; },
       get dead() { return bot.dead; },
       set dead(value) { bot.dead = value; },
       get respawnAt() { return bot.respawnAt; },
@@ -380,6 +406,7 @@ export class LanMatchSimulation {
     const weapon = character.currentWeapon;
     const config = getWeaponConfig(weapon.configId);
     const fireMode = config.fireModes[weapon.currentFireModeIndex];
+    const score = this.gameMode.getScore(character.id);
     return {
       id: character.id,
       name: rig.name,
@@ -391,8 +418,8 @@ export class LanMatchSimulation {
       maxHealth: character.maxHealth,
       dead: rig.dead,
       respawnRemaining: rig.dead ? Math.max(0, rig.respawnAt - now) : 0,
-      kills: rig.kills,
-      deaths: rig.deaths,
+      kills: score.kills,
+      deaths: score.deaths,
       weapon: {
         configId: weapon.configId,
         ammoInMag: weapon.ammoInMag,

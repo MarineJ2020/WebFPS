@@ -5,58 +5,56 @@ const CROSSHAIR_MAX_GAP = 16;
 
 export class HUD {
   private readonly root: HTMLDivElement;
-  private readonly ammoText: HTMLDivElement;
-  private readonly healthText: HTMLDivElement;
+  private readonly fireModeText: HTMLDivElement;
+  private readonly ammoValue: HTMLDivElement;
+  private readonly ammoState: HTMLDivElement;
+  private readonly healthValue: HTMLDivElement;
   private readonly healthBarFill: HTMLDivElement;
   private readonly crosshairLines: { top: HTMLDivElement; bottom: HTMLDivElement; left: HTMLDivElement; right: HTMLDivElement };
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("div");
-    Object.assign(this.root.style, {
-      position: "absolute",
-      inset: "0",
-      pointerEvents: "none",
-      font: "14px monospace",
-      color: "#fff",
-      textShadow: "0 0 4px #000",
-    } satisfies Partial<CSSStyleDeclaration>);
+    this.root.className = "hud-root";
     container.appendChild(this.root);
 
-    this.ammoText = document.createElement("div");
-    Object.assign(this.ammoText.style, { position: "absolute", left: "16px", bottom: "16px" } satisfies Partial<CSSStyleDeclaration>);
-    this.root.appendChild(this.ammoText);
+    // Bottom-left: health.
+    const healthCorner = document.createElement("div");
+    healthCorner.className = "hud-corner hud-corner-left";
+    this.root.appendChild(healthCorner);
 
-    const healthPanel = document.createElement("div");
-    Object.assign(healthPanel.style, {
-      position: "absolute",
-      left: "16px",
-      bottom: "44px",
-      width: "160px",
-    } satisfies Partial<CSSStyleDeclaration>);
-    this.root.appendChild(healthPanel);
+    const healthLabel = document.createElement("div");
+    healthLabel.className = "hud-label";
+    healthLabel.textContent = "Health";
+    healthCorner.appendChild(healthLabel);
 
-    this.healthText = document.createElement("div");
-    this.healthText.style.marginBottom = "2px";
-    healthPanel.appendChild(this.healthText);
+    this.healthValue = document.createElement("div");
+    this.healthValue.className = "hud-value";
+    healthCorner.appendChild(this.healthValue);
 
     const healthBarTrack = document.createElement("div");
-    Object.assign(healthBarTrack.style, {
-      width: "100%",
-      height: "10px",
-      background: "rgba(255, 255, 255, 0.15)",
-      borderRadius: "2px",
-      overflow: "hidden",
-    } satisfies Partial<CSSStyleDeclaration>);
-    healthPanel.appendChild(healthBarTrack);
+    healthBarTrack.className = "hud-health-track";
+    healthCorner.appendChild(healthBarTrack);
 
     this.healthBarFill = document.createElement("div");
-    Object.assign(this.healthBarFill.style, {
-      height: "100%",
-      width: "100%",
-      background: "#4caf50",
-      transition: "width 0.15s linear, background-color 0.15s linear",
-    } satisfies Partial<CSSStyleDeclaration>);
+    this.healthBarFill.className = "hud-health-fill";
     healthBarTrack.appendChild(this.healthBarFill);
+
+    // Bottom-right: ammo.
+    const ammoCorner = document.createElement("div");
+    ammoCorner.className = "hud-corner hud-corner-right";
+    this.root.appendChild(ammoCorner);
+
+    this.fireModeText = document.createElement("div");
+    this.fireModeText.className = "hud-label";
+    ammoCorner.appendChild(this.fireModeText);
+
+    this.ammoValue = document.createElement("div");
+    this.ammoValue.className = "hud-value";
+    ammoCorner.appendChild(this.ammoValue);
+
+    this.ammoState = document.createElement("div");
+    this.ammoState.className = "hud-ammo-state";
+    ammoCorner.appendChild(this.ammoState);
 
     const crosshairRoot = document.createElement("div");
     Object.assign(crosshairRoot.style, {
@@ -114,16 +112,17 @@ export class HUD {
   }
 
   setAmmoStatus(fireModeKind: string, ammoInMag: number, ammoReserve: number, reloading: boolean): void {
-    const reloadSuffix = reloading ? " (reloading...)" : "";
-    this.ammoText.textContent = `${fireModeKind.toUpperCase()}  ${ammoInMag} / ${ammoReserve}${reloadSuffix}`;
+    this.fireModeText.textContent = fireModeKind;
+    this.ammoValue.innerHTML = `${ammoInMag} <small>/ ${ammoReserve}</small>`;
+    this.ammoState.textContent = reloading ? "Reloading" : "";
   }
 
   setHealth(current: number, max: number): void {
     const fraction = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
-    this.healthText.textContent = `HP ${Math.ceil(current)} / ${max}`;
+    this.healthValue.textContent = String(Math.ceil(current));
     this.healthBarFill.style.width = `${fraction * 100}%`;
     this.healthBarFill.style.backgroundColor =
-      fraction > 0.5 ? "#4caf50" : fraction > 0.25 ? "#e0a300" : "#d9453d";
+      fraction > 0.5 ? "var(--ui-ok)" : fraction > 0.25 ? "var(--ui-warn)" : "var(--ui-danger)";
   }
 
   /** `spreadFraction` is 0 (resting/base spread) to 1 (max bloom); widens the crosshair gap to match. */

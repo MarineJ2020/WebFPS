@@ -1,6 +1,7 @@
 import type { GameModeState } from "../app/GameModeState";
 import type { SettingsStore } from "./SettingsStore";
 import { HUD } from "./hud/HUD";
+import { MatchFlowOverlay } from "./hud/MatchFlowOverlay";
 import { Scoreboard } from "./hud/Scoreboard";
 import { DeathScreen } from "./menus/DeathScreen";
 import { LoadingOverlay } from "./menus/LoadingOverlay";
@@ -11,6 +12,7 @@ import { SettingsMenu } from "./menus/SettingsMenu";
 
 export class UIRoot {
   readonly hud: HUD;
+  readonly matchFlowOverlay: MatchFlowOverlay;
   readonly scoreboard: Scoreboard;
   readonly mainMenu: MainMenu;
   readonly localLobbyMenu: LocalLobbyMenu;
@@ -21,6 +23,7 @@ export class UIRoot {
 
   constructor(container: HTMLElement, settingsStore: SettingsStore) {
     this.hud = new HUD(container);
+    this.matchFlowOverlay = new MatchFlowOverlay(container);
     this.scoreboard = new Scoreboard(container);
     this.mainMenu = new MainMenu(container);
     this.localLobbyMenu = new LocalLobbyMenu(container);
@@ -53,6 +56,7 @@ export class UIRoot {
   showMode(mode: GameModeState): void {
     this.settingsMenu.hide();
     this.hud.setVisible(mode === "playing" || mode === "paused");
+    if (mode !== "playing" && mode !== "dead") this.matchFlowOverlay.setVisible(false);
     this.mainMenu.hide();
     this.localLobbyMenu.hide();
     this.pauseMenu.hide();

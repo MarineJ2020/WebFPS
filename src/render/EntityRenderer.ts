@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { AICharacter } from "../core/entities/AICharacter";
 import type { Vec3 } from "../core/entities/Entity";
 import { getWeaponConfig } from "../data/weapons/weaponTypes";
-import type { LocalTeam } from "../net/LanProtocol";
+import type { LanPickupSnapshot, LocalTeam } from "../net/LanProtocol";
 import { loadModelInstance } from "./GLTFModelCache";
 
 const CAPSULE_RADIUS = 0.35;
@@ -36,6 +36,7 @@ export class EntityRenderer {
   private readonly scene: THREE.Scene;
   private readonly meshesById = new Map<string, THREE.Mesh>();
   private readonly labelsById = new Map<string, THREE.Sprite>();
+  private readonly pickupMeshesById = new Map<string, THREE.Mesh>();
   private readonly gunLoadStarted = new Set<string>();
 
   constructor(scene: THREE.Scene) {
@@ -103,12 +104,44 @@ export class EntityRenderer {
     }
   }
 
+  syncPickups(pickups: readonly LanPickupSnapshot[]): void {
+    const activeIds = new Set(pickups.map((pickup) => pickup.id));
+    for (const [id, mesh] of this.pickupMeshesById) {
+      if (activeIds.has(id)) continue;
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      const material = mesh.material;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else material.dispose();
+      this.pickupMeshesById.delete(id);
+    }
+
+    for (const pickup of pickups) {
+      let mesh = this.pickupMeshesById.get(pickup.id);
+      if (!mesh) {
+        mesh = createPickupMesh(pickup.kind);
+        this.scene.add(mesh);
+        this.pickupMeshesById.set(pickup.id, mesh);
+      }
+      mesh.position.set(pickup.position.x, pickup.position.y + 0.35, pickup.position.z);
+      mesh.rotation.y += 0.035;
+    }
+  }
+
   clear(): void {
     for (const mesh of this.meshesById.values()) {
       this.scene.remove(mesh);
       disposeObject3D(mesh);
     }
     this.meshesById.clear();
+    for (const mesh of this.pickupMeshesById.values()) {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      const material = mesh.material;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else material.dispose();
+    }
+    this.pickupMeshesById.clear();
     for (const label of this.labelsById.values()) {
       this.scene.remove(label);
     }
@@ -132,6 +165,17 @@ export class EntityRenderer {
       mesh.add(gunRoot);
     });
   }
+}
+
+function createPickupMesh(kind: LanPickupSnapshot["kind"]): THREE.Mesh {
+  const geometry = kind === "ammo_box"
+    ? new THREE.BoxGeometry(0.55, 0.28, 0.35)
+    : new THREE.IcosahedronGeometry(0.28, 1);
+  const material = new THREE.MeshStandardMaterial({
+    color: kind === "ammo_box" ? 0xffd166 : 0x62f28f,
+    emissive: kind === "ammo_box" ? 0x4a3300 : 0x063f1b,
+  });
+  return new THREE.Mesh(geometry, material);
 }
 
 function disposeObject3D(root: THREE.Object3D): void {

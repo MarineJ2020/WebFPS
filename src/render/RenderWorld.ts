@@ -4,8 +4,10 @@ import { MapSceneController } from "./MapRenderer";
 import { EntityRenderer } from "./EntityRenderer";
 import { PlayerViewmodel } from "./PlayerViewmodel";
 import { HitDecals } from "./fx/HitDecals";
+import { ImpactParticles } from "./fx/ImpactParticles";
 import { Tracer } from "./fx/Tracer";
 import { TracerCoordinator } from "./fx/TracerCoordinator";
+import { WorldAudio } from "./fx/WorldAudio";
 import { BotDebugVisualizer } from "./debug/BotDebugVisualizer";
 import { ThreeHitscanQuery } from "../core/physics/raycast/ThreeHitscanQuery";
 import { applyPlayerToCamera } from "./CameraRig";
@@ -22,9 +24,10 @@ export class RenderWorld {
   private readonly entityRenderer: EntityRenderer;
   private readonly viewmodel: PlayerViewmodel;
   private readonly hitDecals: HitDecals;
+  private readonly impactParticles: ImpactParticles;
   private readonly tracer: Tracer;
+  private readonly worldAudio: WorldAudio;
   private readonly botDebug: BotDebugVisualizer;
-  private readonly muzzleWorldPosition = new THREE.Vector3();
   private tracerCoordinator: TracerCoordinator | null = null;
   private eventUnsubscribers: Array<() => void> = [];
   private lastReloadTimer = 0;
@@ -33,9 +36,11 @@ export class RenderWorld {
     this.sceneManager = new SceneManager(container);
     this.mapScene = new MapSceneController(this.sceneManager.scene);
     this.entityRenderer = new EntityRenderer(this.sceneManager.scene);
-    this.viewmodel = new PlayerViewmodel(this.sceneManager.camera);
+    this.viewmodel = new PlayerViewmodel(this.sceneManager.viewmodelScene);
     this.hitDecals = new HitDecals(this.sceneManager.scene);
+    this.impactParticles = new ImpactParticles(this.sceneManager.scene);
     this.tracer = new Tracer(this.sceneManager.scene);
+    this.worldAudio = new WorldAudio(this.sceneManager.scene, this.sceneManager.camera);
     this.botDebug = new BotDebugVisualizer(this.sceneManager.scene);
   }
 
@@ -62,21 +67,25 @@ export class RenderWorld {
     this.lastReloadTimer = 0;
     await this.viewmodel.setWeapon(getWeaponConfig(simulation.player.currentWeapon.configId));
 
-    this.tracerCoordinator = new TracerCoordinator(simulation.events, this.tracer, (event) => {
-      if (event.entityId !== simulation.player.id) return null;
-      const point = this.viewmodel.getMuzzleWorldPosition(this.muzzleWorldPosition);
-      return { x: point.x, y: point.y, z: point.z };
-    });
+    this.tracerCoordinator = new TracerCoordinator(simulation.events, this.tracer);
 
     this.eventUnsubscribers = [
       simulation.events.on("weaponFired", (event) => {
-        if (event.entityId !== simulation.player.id) return;
-        const isLastRound = simulation.player.currentWeapon.ammoInMag === 0;
-        this.viewmodel.playFireEffect(isLastRound);
+        if (event.entityId === simulation.player.id) {
+          const isLastRound = simulation.player.currentWeapon.ammoInMag === 0;
+          this.viewmodel.playFireEffect(isLastRound);
+          return;
+        }
+        this.worldAudio.playShot(event.origin);
       }),
       simulation.events.on("weaponHit", (hit) => {
         if (!hit.hitEntityId && hit.normal) {
           this.hitDecals.spawn(hit.point, hit.normal);
+          this.impactParticles.spawnWall(hit.point, hit.normal);
+          this.worldAudio.playImpact(hit.point, "world");
+        } else if (hit.hitEntityId) {
+          this.impactParticles.spawnBlood(hit.point);
+          this.worldAudio.playImpact(hit.point, "character");
         }
       }),
     ];
@@ -105,6 +114,8 @@ export class RenderWorld {
 
     this.viewmodel.update(dt, yawDelta, pitchDelta, player.grounded, player.verticalVelocity);
     this.tracer.update(dt);
+    this.impactParticles.update(dt);
+    this.worldAudio.update();
     applyPlayerToCamera(this.sceneManager.camera, player);
     this.entityRenderer.sync(simulation.aiCharacters);
     this.botDebug.sync(simulation.aiCharacters);
@@ -154,12 +165,23 @@ export class RenderWorld {
         weaponConfigId: bot.weapon.configId,
       })),
     ]);
+    this.entityRenderer.syncPickups(snapshot.pickups);
 
     for (const shot of snapshot.shots) {
       if (shot.shooterId === localPlayer.id) this.viewmodel.playFireEffect(localPlayer.weapon.ammoInMag === 0);
+      else this.worldAudio.playShot(shot.from);
       this.tracer.spawn(shot.from, shot.to);
+      if (shot.impactKind === "character") {
+        this.impactParticles.spawnBlood(shot.to);
+        this.worldAudio.playImpact(shot.to, "character");
+      } else if (shot.impactKind === "world") {
+        this.impactParticles.spawnWall(shot.to);
+        this.worldAudio.playImpact(shot.to, "world");
+      }
     }
     this.tracer.update(dt);
+    this.impactParticles.update(dt);
+    this.worldAudio.update();
   }
 
   render(): void {
@@ -169,6 +191,8 @@ export class RenderWorld {
   applySettings(settings: { fov: number }): void {
     this.sceneManager.camera.fov = settings.fov;
     this.sceneManager.camera.updateProjectionMatrix();
+    this.sceneManager.viewmodelCamera.fov = settings.fov;
+    this.sceneManager.viewmodelCamera.updateProjectionMatrix();
   }
 
   clearSimulationBindings(): void {
@@ -177,6 +201,7 @@ export class RenderWorld {
     for (const unsubscribe of this.eventUnsubscribers) unsubscribe();
     this.eventUnsubscribers = [];
     this.entityRenderer.clear();
+    this.impactParticles.clear();
   }
 
   dispose(): void {
@@ -184,6 +209,7 @@ export class RenderWorld {
     this.botDebug.dispose();
     this.mapScene.clear();
     this.entityRenderer.clear();
+    this.worldAudio.dispose();
     this.sceneManager.dispose();
   }
 }

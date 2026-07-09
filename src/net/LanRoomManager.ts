@@ -3,6 +3,7 @@ import { createDefaultSessionDefinition } from "../data/session/GameSessionDefin
 import type {
   LanLobbyState,
   LanRoomPlayer,
+  LanRoomPhase,
   LanRoomSummary,
   LocalTeam,
 } from "./LanProtocol";
@@ -15,7 +16,7 @@ export interface LanClientRecord {
 export interface LanRoomRecord {
   id: string;
   name: string;
-  phase: "lobby" | "playing";
+  phase: LanRoomPhase;
   map: MapDefinition;
   players: LanRoomPlayer[];
 }
@@ -105,7 +106,14 @@ export class LanRoomManager {
     const room = this.getClientRoom(clientId);
     const player = room?.players.find((candidate) => candidate.id === clientId);
     if (!room || !player?.isHost) return null;
-    room.phase = "playing";
+    room.phase = "warmup";
+    return room;
+  }
+
+  setRoomPhase(roomId: string, phase: LanRoomRecord["phase"]): LanRoomRecord | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    room.phase = phase;
     return room;
   }
 

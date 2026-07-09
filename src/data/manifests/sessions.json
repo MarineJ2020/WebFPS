@@ -1,0 +1,11 @@
+[
+  {
+    "id": "default-blockout",
+    "displayName": "Blockout Skirmish",
+    "mapId": "blockout_map_01",
+    "gameModeId": "deathmatch",
+    "playerWeaponConfigIds": ["assault_rifle_01"],
+    "botWeaponConfigIds": ["bot_rifle_01"],
+    "characterId": "prototype_soldier"
+  }
+]

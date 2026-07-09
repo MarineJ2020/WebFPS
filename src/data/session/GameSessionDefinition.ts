@@ -1,6 +1,6 @@
 import { BLOCKOUT_MAP_01 } from "../maps/blockoutMap01";
 import type { MapDefinition } from "../maps/MapDefinition";
-import { ASSAULT_RIFLE_01, BOT_RIFLE_01 } from "../weapons/weaponTypes";
+import { getManifestSession } from "../manifests/AssetManifest";
 
 export interface CharacterLoadoutDefinition {
   weaponConfigIds: string[];
@@ -19,16 +19,17 @@ export interface GameSessionDefinition {
 }
 
 export function createDefaultSessionDefinition(map: MapDefinition = BLOCKOUT_MAP_01): GameSessionDefinition {
+  const session = getManifestSession("default-blockout");
   return {
-    id: "default-blockout",
-    name: "Blockout Skirmish",
+    id: session.id,
+    name: session.displayName,
     map,
     player: {
-      weaponConfigIds: [ASSAULT_RIFLE_01.id],
+      weaponConfigIds: session.playerWeaponConfigIds,
     },
     bots: map.spawnPoints.ai.map((_, index) => ({
       id: `bot-${index}`,
-      weaponConfigIds: [BOT_RIFLE_01.id],
+      weaponConfigIds: session.botWeaponConfigIds,
     })),
   };
 }

@@ -1,4 +1,5 @@
 import { ALL_INPUT_ACTIONS, KeyBindings, type InputAction } from "../../input/KeyBindings";
+import { createButton, createPanel } from "../components/NativeControls";
 import type { SettingsStore } from "../SettingsStore";
 
 const ACTION_LABELS: Record<InputAction, string> = {
@@ -85,38 +86,33 @@ export class SettingsMenu {
 
   private buildDom(): HTMLDivElement {
     const overlay = document.createElement("div");
-    Object.assign(overlay.style, {
-      display: "none",
-      position: "absolute",
-      inset: "0",
-      background: "rgba(0, 0, 0, 0.65)",
-      color: "#fff",
-      font: "14px system-ui, sans-serif",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: "30",
-    } satisfies Partial<CSSStyleDeclaration>);
+    overlay.className = "menu-overlay settings-menu";
+    overlay.style.display = "none";
+    overlay.style.zIndex = "30";
 
-    const panel = document.createElement("div");
-    Object.assign(panel.style, {
-      background: "rgba(15, 18, 24, 0.95)",
-      border: "1px solid rgba(255, 255, 255, 0.16)",
-      borderRadius: "8px",
-      padding: "20px 28px",
-      minWidth: "320px",
-    } satisfies Partial<CSSStyleDeclaration>);
+    const panel = createPanel("settings-panel");
     overlay.appendChild(panel);
 
     const title = document.createElement("h2");
     title.textContent = "Settings";
-    title.style.marginBottom = "12px";
     panel.appendChild(title);
+
+    const controlsSection = document.createElement("div");
+    controlsSection.className = "settings-section";
+    controlsSection.textContent = "Controls";
+    panel.appendChild(controlsSection);
 
     panel.appendChild(
       this.buildSlider("Mouse Sensitivity", 0.0005, 0.01, 0.0001, this.settingsStore.get().mouseSensitivity, (value) =>
         this.settingsStore.update({ mouseSensitivity: value }),
       ),
     );
+
+    const displaySection = document.createElement("div");
+    displaySection.className = "settings-section";
+    displaySection.textContent = "Display & Audio";
+    panel.appendChild(displaySection);
+
     panel.appendChild(
       this.buildSlider("Field of View", 60, 100, 1, this.settingsStore.get().fov, (value) =>
         this.settingsStore.update({ fov: value }),
@@ -128,20 +124,18 @@ export class SettingsMenu {
       ),
     );
 
-    const bindingsHeading = document.createElement("h3");
+    const bindingsHeading = document.createElement("div");
+    bindingsHeading.className = "settings-section";
     bindingsHeading.textContent = "Key Bindings";
-    bindingsHeading.style.margin = "16px 0 8px";
     panel.appendChild(bindingsHeading);
 
     for (const action of ALL_INPUT_ACTIONS) {
       panel.appendChild(this.buildRebindRow(action));
     }
 
-    const resumeButton = document.createElement("button");
-    resumeButton.textContent = "Close";
-    resumeButton.style.marginTop = "16px";
-    resumeButton.addEventListener("click", () => this.setVisible(false));
-    panel.appendChild(resumeButton);
+    const closeButton = createButton("Close", () => this.setVisible(false), "primary");
+    closeButton.classList.add("settings-close");
+    panel.appendChild(closeButton);
 
     return overlay;
   }
@@ -155,14 +149,18 @@ export class SettingsMenu {
     onInput: (value: number) => void,
   ): HTMLDivElement {
     const row = document.createElement("div");
-    row.style.marginBottom = "10px";
+    row.className = "settings-slider-row";
 
-    const labelEl = document.createElement("label");
-    labelEl.textContent = `${label}: `;
+    const labelRow = document.createElement("div");
+    labelRow.className = "settings-slider-label";
+    const labelEl = document.createElement("span");
+    labelEl.textContent = label;
     const valueEl = document.createElement("span");
-    valueEl.textContent = initial.toFixed(4);
-    labelEl.appendChild(valueEl);
-    row.appendChild(labelEl);
+    valueEl.className = "settings-slider-value";
+    valueEl.textContent = formatSliderValue(initial, step);
+    labelRow.appendChild(labelEl);
+    labelRow.appendChild(valueEl);
+    row.appendChild(labelRow);
 
     const input = document.createElement("input");
     input.type = "range";
@@ -170,11 +168,9 @@ export class SettingsMenu {
     input.max = String(max);
     input.step = String(step);
     input.value = String(initial);
-    input.style.display = "block";
-    input.style.width = "100%";
     input.addEventListener("input", () => {
       const value = Number(input.value);
-      valueEl.textContent = value.toFixed(4);
+      valueEl.textContent = formatSliderValue(value, step);
       onInput(value);
     });
     row.appendChild(input);
@@ -184,20 +180,13 @@ export class SettingsMenu {
 
   private buildRebindRow(action: InputAction): HTMLDivElement {
     const row = document.createElement("div");
-    Object.assign(row.style, {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: "4px",
-    } satisfies Partial<CSSStyleDeclaration>);
+    row.className = "settings-bind-row";
 
     const label = document.createElement("span");
     label.textContent = ACTION_LABELS[action];
     row.appendChild(label);
 
-    const button = document.createElement("button");
-    button.textContent = KeyBindings.get(action);
-    button.addEventListener("click", () => {
+    const button = createButton(KeyBindings.get(action), () => {
       this.awaitingRebindAction = action;
       button.textContent = "Press a key...";
     });
@@ -206,4 +195,10 @@ export class SettingsMenu {
 
     return row;
   }
+}
+
+/** Shows only as many decimals as the slider's step actually needs (75 stays "75", not "75.0000"). */
+function formatSliderValue(value: number, step: number): string {
+  const decimals = Math.min(4, Math.max(0, -Math.floor(Math.log10(step))));
+  return value.toFixed(decimals);
 }
