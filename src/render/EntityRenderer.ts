@@ -1,12 +1,26 @@
 import * as THREE from "three";
 import type { AICharacter } from "../core/entities/AICharacter";
+import type { Vec3 } from "../core/entities/Entity";
 import { getWeaponConfig } from "../data/weapons/weaponTypes";
+import type { LocalTeam } from "../net/LanProtocol";
 import { loadModelInstance } from "./GLTFModelCache";
 
 const CAPSULE_RADIUS = 0.35;
 const CAPSULE_HEIGHT = 1.7;
 const BOT_COLOR = new THREE.Color(0xd6455c);
 const BOT_DEAD_COLOR = new THREE.Color(0x555555);
+const TEAM_A_COLOR = new THREE.Color(0x55ff88);
+const TEAM_B_COLOR = new THREE.Color(0x55aaff);
+
+export interface RenderableNetworkCharacter {
+  id: string;
+  name: string;
+  team: LocalTeam;
+  position: Vec3;
+  yaw: number;
+  dead: boolean;
+  weaponConfigId: string;
+}
 
 // --- Tunables for attaching the third-person gun model to a bot's "hand". The first-person
 // AutoRifle.glb (same asset family) turned out to need scale 1, not the originally-guessed
@@ -21,6 +35,7 @@ const GUN_LOCAL_OFFSET = new THREE.Vector3(0.25, 0.1, 0.15);
 export class EntityRenderer {
   private readonly scene: THREE.Scene;
   private readonly meshesById = new Map<string, THREE.Mesh>();
+  private readonly labelsById = new Map<string, THREE.Sprite>();
   private readonly gunLoadStarted = new Set<string>();
 
   constructor(scene: THREE.Scene) {
@@ -37,7 +52,7 @@ export class EntityRenderer {
         );
         this.scene.add(mesh);
         this.meshesById.set(bot.id, mesh);
-        this.attachGunModel(bot, mesh);
+        this.attachGunModel(bot.id, bot.currentWeapon.configId, mesh);
       }
 
       const material = mesh.material as THREE.MeshStandardMaterial;
@@ -47,20 +62,65 @@ export class EntityRenderer {
     }
   }
 
+  syncNetwork(characters: readonly RenderableNetworkCharacter[]): void {
+    const activeIds = new Set(characters.map((character) => character.id));
+    for (const [id, mesh] of this.meshesById) {
+      if (activeIds.has(id)) continue;
+      this.scene.remove(mesh);
+      disposeObject3D(mesh);
+      this.meshesById.delete(id);
+      const label = this.labelsById.get(id);
+      if (label) {
+        this.scene.remove(label);
+        this.labelsById.delete(id);
+      }
+    }
+
+    for (const character of characters) {
+      let mesh = this.meshesById.get(character.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(
+          new THREE.CapsuleGeometry(CAPSULE_RADIUS, CAPSULE_HEIGHT - CAPSULE_RADIUS * 2, 4, 8),
+          new THREE.MeshStandardMaterial({ color: character.team === "A" ? TEAM_A_COLOR : TEAM_B_COLOR }),
+        );
+        this.scene.add(mesh);
+        this.meshesById.set(character.id, mesh);
+        this.attachGunModel(character.id, character.weaponConfigId, mesh);
+      }
+
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      material.color.copy(character.dead ? BOT_DEAD_COLOR : character.team === "A" ? TEAM_A_COLOR : TEAM_B_COLOR);
+      mesh.position.set(character.position.x, character.position.y + CAPSULE_HEIGHT / 2, character.position.z);
+      mesh.rotation.y = character.yaw;
+
+      let label = this.labelsById.get(character.id);
+      if (!label) {
+        label = createNameLabel(character.name);
+        this.scene.add(label);
+        this.labelsById.set(character.id, label);
+      }
+      label.position.set(character.position.x, character.position.y + CAPSULE_HEIGHT + 0.45, character.position.z);
+    }
+  }
+
   clear(): void {
     for (const mesh of this.meshesById.values()) {
       this.scene.remove(mesh);
       disposeObject3D(mesh);
     }
     this.meshesById.clear();
+    for (const label of this.labelsById.values()) {
+      this.scene.remove(label);
+    }
+    this.labelsById.clear();
     this.gunLoadStarted.clear();
   }
 
-  private attachGunModel(bot: AICharacter, mesh: THREE.Mesh): void {
-    if (this.gunLoadStarted.has(bot.id)) return;
-    this.gunLoadStarted.add(bot.id);
+  private attachGunModel(id: string, weaponConfigId: string, mesh: THREE.Mesh): void {
+    if (this.gunLoadStarted.has(id)) return;
+    this.gunLoadStarted.add(id);
 
-    const modelUrl = getWeaponConfig(bot.currentWeapon.configId).thirdPersonModelUrl;
+    const modelUrl = getWeaponConfig(weaponConfigId).thirdPersonModelUrl;
     if (!modelUrl) return;
 
     loadModelInstance(modelUrl).then(({ scene }) => {
@@ -83,4 +143,22 @@ function disposeObject3D(root: THREE.Object3D): void {
       else material.dispose();
     }
   });
+}
+
+function createNameLabel(name: string): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "28px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(1.5, 0.375, 1);
+  return sprite;
 }

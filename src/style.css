@@ -97,6 +97,94 @@ select {
   background: rgba(0, 0, 0, 0.24);
 }
 
+.lan-status-online {
+  color: #b9f6d0;
+}
+
+.lan-room-list {
+  display: grid;
+  gap: 6px;
+  max-height: 170px;
+  overflow: auto;
+}
+
+.lan-room-row {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: #f5f7fb;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.lan-room-row:hover {
+  border-color: rgba(143, 208, 255, 0.38);
+  background: rgba(143, 208, 255, 0.12);
+}
+
+.lan-room-row small,
+.lan-room-empty {
+  color: rgba(245, 247, 251, 0.62);
+  font-size: 12px;
+}
+
+.lobby-panel {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.lobby-panel h1 {
+  margin: 4px 0 8px;
+}
+
+.lobby-team-actions {
+  margin: 18px 0 12px;
+}
+
+.lobby-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.lobby-team {
+  min-height: 180px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.lobby-team-title {
+  padding: 10px 12px;
+  color: rgba(245, 247, 251, 0.78);
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.lobby-team-body {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.lobby-player,
+.lobby-empty {
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: rgba(245, 247, 251, 0.82);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lobby-player.self {
+  color: #071018;
+  background: #8fd0ff;
+}
+
 .menu-eyebrow,
 .menu-status,
 .editor-status,

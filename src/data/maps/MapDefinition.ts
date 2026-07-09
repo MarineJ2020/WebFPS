@@ -14,6 +14,14 @@ export interface AISpawnDefinition {
   patrolPoints: Vec3[];
 }
 
+export interface TeamPlayerSpawnDefinition {
+  kind: "player";
+  team: "A" | "B";
+  position: Vec3;
+  enabled?: boolean;
+  hidden?: boolean;
+}
+
 export interface MapDefinition {
   volumes: MapVolume[];
   /** Hand-authored convex regions (CCW winding, viewed from above) covering the walkable floor. */
@@ -21,6 +29,7 @@ export interface MapDefinition {
   spawnPoints: {
     player: Vec3;
     ai: AISpawnDefinition[];
+    points?: TeamPlayerSpawnDefinition[];
   };
 }
 

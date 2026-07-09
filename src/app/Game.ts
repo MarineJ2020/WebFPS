@@ -14,7 +14,9 @@ import { GameLoop } from "./GameLoop";
 import type { GameModeState } from "./GameModeState";
 import { SessionController } from "./SessionController";
 import { Scoreboard, type ScoreboardRow } from "../ui/hud/Scoreboard";
-import { LocalMultiplayerSession, type LocalMultiplayerSnapshot } from "../net/LocalMultiplayerSession";
+import { LanMultiplayerClient } from "../net/LanMultiplayerClient";
+import type { LanLobbyState, LanMatchSnapshot, LanRoomSummary } from "../net/LanProtocol";
+import { ASSAULT_RIFLE_01 } from "../data/weapons/weaponTypes";
 
 const RESPAWN_SECONDS = 3;
 
@@ -30,10 +32,15 @@ export class Game {
   private simulation: SimulationWorld | null = null;
   private mode: GameModeState = "mainMenu";
   private readonly scores = new Map<string, ScoreboardRow>();
-  private readonly remoteScores = new Map<string, ScoreboardRow>();
   private readonly pendingRespawns = new Set<string>();
   private scoreUnsubscribers: Array<() => void> = [];
-  private localMultiplayer: LocalMultiplayerSession | null = null;
+  private readonly lanClient: LanMultiplayerClient;
+  private lanSelfId = "";
+  private lanLobby: LanLobbyState | null = null;
+  private lanSnapshot: LanMatchSnapshot | null = null;
+  private lanMatchActive = false;
+  private lanWeaponBound = false;
+  private lastKillerName = "";
   private importedMenuLevel: { name: string; map: MapDefinition } | null = null;
 
   constructor(container: HTMLElement) {
@@ -59,6 +66,17 @@ export class Game {
     );
 
     this.wireUI();
+    this.lanClient = new LanMultiplayerClient({
+      onConnectionChange: (message, connected) => this.ui.mainMenu.setLanConnectionStatus(message, connected),
+      onWelcome: (clientId) => {
+        this.lanSelfId = clientId;
+      },
+      onRoomList: (rooms) => this.onLanRoomList(rooms),
+      onLobby: (lobby) => this.onLanLobby(lobby),
+      onMatchStarted: (_roomId, map) => void this.onLanMatchStarted(map),
+      onSnapshot: (snapshot) => this.onLanSnapshot(snapshot),
+      onError: (message) => this.ui.mainMenu.setStatus(message),
+    });
     this.applySettings(this.settingsStore.get());
     this.settingsStore.onChange((settings) => this.applySettings(settings));
     document.addEventListener("keydown", this.onKeyDown);
@@ -84,8 +102,8 @@ export class Game {
   private wireUI(): void {
     this.ui.setMainMenuActions({
       onStartGame: () => void this.startGame(this.createMenuSessionDefinition()),
-      onHostLocal: (roomId, playerName) => void this.startLocalMultiplayer("host", roomId, playerName),
-      onJoinLocal: (roomId, playerName) => void this.startLocalMultiplayer("client", roomId, playerName),
+      onCreateLanRoom: (roomName, playerName) => this.createLanRoom(roomName, playerName),
+      onJoinLanRoom: (roomId, playerName) => this.joinLanRoom(roomId, playerName),
       onImportLevel: (json, fileName) => this.importMenuLevel(json, fileName),
       onClearImportedLevel: () => {
         this.importedMenuLevel = null;
@@ -100,6 +118,12 @@ export class Game {
       onRestart: () => void this.restartGame(),
       onOpenSettings: () => this.ui.settingsMenu.show(),
       onMainMenu: () => this.showMainMenu(),
+    });
+
+    this.ui.setLocalLobbyActions({
+      onSetTeam: (team) => this.lanClient.setTeam(team),
+      onStartMatch: () => this.lanClient.startMatch(),
+      onLeave: () => this.showMainMenu(),
     });
 
     this.ui.setDeathActions({
@@ -119,6 +143,11 @@ export class Game {
   }
 
   private async restartGame(): Promise<void> {
+    if (this.lanMatchActive) {
+      this.ui.deathScreen.setRespawnCountdown(0);
+      return;
+    }
+
     const restarted = await this.sessions.restart(this.renderWorld.hitscan);
     if (!restarted || !this.sessions.definition) {
       await this.startGame(createDefaultSessionDefinition());
@@ -141,22 +170,28 @@ export class Game {
 
   private showMainMenu(): void {
     this.simulation = null;
+    if (this.lanLobby || this.lanMatchActive) this.lanClient.leaveRoom();
+    this.lanLobby = null;
+    this.lanSnapshot = null;
+    this.lanMatchActive = false;
+    this.lanWeaponBound = false;
     this.sessions.clear();
     this.levelEditor.hide();
     this.renderWorld.clearSimulationBindings();
     this.clearDeathmatchBindings();
-    this.localMultiplayer?.dispose();
-    this.localMultiplayer = null;
     this.setMode("mainMenu");
   }
 
   private openEditor(): void {
     this.simulation = null;
+    if (this.lanLobby || this.lanMatchActive) this.lanClient.leaveRoom();
+    this.lanLobby = null;
+    this.lanSnapshot = null;
+    this.lanMatchActive = false;
+    this.lanWeaponBound = false;
     this.sessions.clear();
     this.renderWorld.clearSimulationBindings();
     this.clearDeathmatchBindings();
-    this.localMultiplayer?.dispose();
-    this.localMultiplayer = null;
     this.setMode("editing");
     this.levelEditor.show();
   }
@@ -183,6 +218,12 @@ export class Game {
       return;
     }
 
+    if (this.lanMatchActive && this.lanSnapshot && (this.mode === "playing" || this.mode === "dead")) {
+      this.tickLanMatch(frameDelta);
+      this.renderWorld.render();
+      return;
+    }
+
     const simulation = this.simulation;
     if (simulation && this.mode === "playing") {
       const command = simulation.player.health > 0 ? this.inputManager.consumeCommand() : emptyPlayerCommand();
@@ -194,6 +235,8 @@ export class Game {
 
       if (simulation.player.health <= 0) {
         this.scheduleRespawn(simulation.player.id);
+        this.ui.deathScreen.setRespawnCountdown(RESPAWN_SECONDS);
+        this.setMode("dead");
       }
     } else if (simulation) {
       this.renderWorld.update(frameDelta, simulation, 0, 0);
@@ -214,6 +257,51 @@ export class Game {
     const spreadRange = config.maxSpread - config.baseSpread;
     const spreadFraction = spreadRange > 0 ? (weapon.currentSpread - config.baseSpread) / spreadRange : 0;
     this.ui.hud.setCrosshairSpread(spreadFraction);
+  }
+
+  private tickLanMatch(frameDelta: number): void {
+    const snapshot = this.lanSnapshot;
+    if (!snapshot) return;
+    const localPlayer = snapshot.players.find((player) => player.id === this.lanSelfId);
+    if (!localPlayer) return;
+
+    const command = this.mode === "playing" && !localPlayer.dead
+      ? this.inputManager.consumeCommand()
+      : emptyPlayerCommand();
+    this.lanClient.sendInput(command);
+    this.renderWorld.updateNetwork(frameDelta, localPlayer, snapshot, command.yawDelta, command.pitchDelta);
+    this.updateNetworkHUD(localPlayer);
+    this.updateNetworkScoreboard(snapshot);
+
+    if (localPlayer.dead) {
+      this.ui.deathScreen.setRespawnCountdown(localPlayer.respawnRemaining, this.lastKillerName);
+      if (this.mode !== "dead") this.setMode("dead");
+    } else if (this.mode === "dead") {
+      this.lastKillerName = "";
+      this.setMode("playing");
+    }
+  }
+
+  private updateNetworkHUD(player: LanMatchSnapshot["players"][number]): void {
+    this.ui.hud.setAmmoStatus(
+      player.weapon.fireModeKind,
+      player.weapon.ammoInMag,
+      player.weapon.ammoReserve,
+      player.weapon.reloadTimer > 0,
+    );
+    this.ui.hud.setHealth(player.health, player.maxHealth);
+    this.ui.hud.setCrosshairSpread(0);
+  }
+
+  private updateNetworkScoreboard(snapshot: LanMatchSnapshot): void {
+    this.scoreboard.setRows([...snapshot.players, ...snapshot.bots].map((character) => ({
+      id: character.id,
+      name: character.name,
+      team: character.team,
+      kills: character.kills,
+      deaths: character.deaths,
+      ping: 0,
+    })));
   }
 
   private bindDeathmatch(simulation: SimulationWorld): void {
@@ -253,25 +341,25 @@ export class Game {
     this.updateScoreboard();
   }
 
-  private async startLocalMultiplayer(
-    role: "host" | "client",
-    roomId: string,
-    playerName: string,
-  ): Promise<void> {
-    this.localMultiplayer?.dispose();
-    this.remoteScores.clear();
-    this.localMultiplayer = new LocalMultiplayerSession({
-      roomId: roomId.trim() || "webfps",
-      role,
-      name: playerName.trim() || "Player",
-      onChange: (snapshot) => this.onLocalMultiplayerChange(snapshot),
-      onScore: (row) => {
-        this.remoteScores.set(row.id, row);
-        this.updateScoreboard();
-      },
-    });
-    await this.startGame(this.createMenuSessionDefinition());
-    this.ui.mainMenu.setStatus(`${role === "host" ? "Hosting" : "Joined"} local room "${roomId || "webfps"}". Open another tab to join.`);
+  private createLanRoom(roomName: string, playerName: string): void {
+    this.simulation = null;
+    this.sessions.clear();
+    this.clearDeathmatchBindings();
+    this.lanClient.createRoom(roomName.trim() || "WebFPS Room", playerName);
+    this.ui.mainMenu.setStatus("Creating LAN room...");
+  }
+
+  private joinLanRoom(roomId: string, playerName: string): void {
+    const id = roomId.trim();
+    if (!id) {
+      this.ui.mainMenu.setStatus("Choose a room or enter a room id.");
+      return;
+    }
+    this.simulation = null;
+    this.sessions.clear();
+    this.clearDeathmatchBindings();
+    this.lanClient.joinRoom(id, playerName);
+    this.ui.mainMenu.setStatus("Joining LAN room...");
   }
 
   private importMenuLevel(json: string, fileName: string): void {
@@ -297,24 +385,43 @@ export class Game {
     return createDefaultSessionDefinition(this.importedMenuLevel?.map);
   }
 
-  private onLocalMultiplayerChange(snapshot: LocalMultiplayerSnapshot): void {
-    for (const peer of snapshot.peers) {
-      if (!this.remoteScores.has(peer.id)) {
-        this.remoteScores.set(peer.id, {
-          id: peer.id,
-          name: peer.name,
-          team: peer.role === "host" ? "A" : "B",
-          kills: 0,
-          deaths: 0,
-          ping: Math.max(0, Math.round(performance.now() - peer.lastSeen)),
+  private onLanRoomList(rooms: LanRoomSummary[]): void {
+    this.ui.mainMenu.setLanRooms(rooms);
+  }
+
+  private onLanLobby(lobby: LanLobbyState): void {
+    this.lanLobby = lobby;
+    this.ui.localLobbyMenu.setLobby(lobby, this.lanSelfId);
+    if (!this.lanMatchActive) this.setMode("localLobby");
+  }
+
+  private async onLanMatchStarted(map: MapDefinition): Promise<void> {
+    this.lanMatchActive = true;
+    this.lanSnapshot = null;
+    this.lanWeaponBound = false;
+    this.simulation = null;
+    this.sessions.clear();
+    this.clearDeathmatchBindings();
+    this.levelEditor.hide();
+    this.setMode("loading");
+    this.renderWorld.loadMap(map);
+    await this.renderWorld.bindNetworkWeapon(ASSAULT_RIFLE_01.id);
+    this.lanWeaponBound = true;
+    this.setMode("playing");
+  }
+
+  private onLanSnapshot(snapshot: LanMatchSnapshot): void {
+    this.lanSnapshot = snapshot;
+    const localKill = snapshot.kills.find((kill) => kill.victimId === this.lanSelfId);
+    if (localKill) this.lastKillerName = localKill.killerName;
+    if (!this.lanWeaponBound) {
+      const localPlayer = snapshot.players.find((player) => player.id === this.lanSelfId);
+      if (localPlayer) {
+        void this.renderWorld.bindNetworkWeapon(localPlayer.weapon.configId).then(() => {
+          this.lanWeaponBound = true;
         });
       }
     }
-
-    for (const id of [...this.remoteScores.keys()]) {
-      if (!snapshot.peers.some((peer) => peer.id === id)) this.remoteScores.delete(id);
-    }
-    this.updateScoreboard();
   }
 
   private clearDeathmatchBindings(): void {
@@ -332,14 +439,13 @@ export class Game {
       if (this.simulation !== simulation) return;
       simulation.respawnCharacter(entityId);
       this.pendingRespawns.delete(entityId);
+      if (entityId === simulation.player.id && this.mode === "dead") this.setMode("playing");
     }, RESPAWN_SECONDS * 1000);
   }
 
   private updateScoreboard(): void {
     const localRows = [...this.scores.values()];
-    this.scoreboard.setRows([...localRows, ...this.remoteScores.values()]);
-    const selfRow = localRows.find((row) => row.id === this.simulation?.player.id);
-    if (selfRow) this.localMultiplayer?.updateScore(selfRow);
+    this.scoreboard.setRows(localRows);
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {

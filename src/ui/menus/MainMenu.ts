@@ -1,9 +1,10 @@
 import { createButton, createPanel } from "../components/NativeControls";
+import type { LanRoomSummary } from "../../net/LanProtocol";
 
 export interface MainMenuActions {
   onStartGame: () => void;
-  onHostLocal: (roomId: string, playerName: string) => void;
-  onJoinLocal: (roomId: string, playerName: string) => void;
+  onCreateLanRoom: (roomName: string, playerName: string) => void;
+  onJoinLanRoom: (roomId: string, playerName: string) => void;
   onImportLevel: (json: string, fileName: string) => void;
   onClearImportedLevel: () => void;
   onOpenEditor: () => void;
@@ -17,6 +18,8 @@ export class MainMenu {
   private readonly nameInput: HTMLInputElement;
   private readonly levelInput: HTMLInputElement;
   private readonly levelLabel: HTMLDivElement;
+  private readonly lanStatus: HTMLDivElement;
+  private readonly roomList: HTMLDivElement;
   private actions: MainMenuActions | null = null;
 
   constructor(container: HTMLElement) {
@@ -77,12 +80,21 @@ export class MainMenu {
     multiplayer.className = "local-multiplayer-box menu-option-box";
     const multiplayerTitle = document.createElement("div");
     multiplayerTitle.className = "menu-eyebrow";
-    multiplayerTitle.textContent = "Local Multiplayer";
+    multiplayerTitle.textContent = "LAN Multiplayer";
     multiplayer.appendChild(multiplayerTitle);
 
+    this.lanStatus = document.createElement("div");
+    this.lanStatus.className = "menu-option-label";
+    this.lanStatus.textContent = "Connecting to LAN server...";
+    multiplayer.appendChild(this.lanStatus);
+
+    this.roomList = document.createElement("div");
+    this.roomList.className = "lan-room-list";
+    multiplayer.appendChild(this.roomList);
+
     this.roomInput = document.createElement("input");
-    this.roomInput.placeholder = "Room";
-    this.roomInput.value = "webfps";
+    this.roomInput.placeholder = "Room name or room id";
+    this.roomInput.value = "WebFPS Room";
     multiplayer.appendChild(this.roomInput);
 
     this.nameInput = document.createElement("input");
@@ -92,8 +104,8 @@ export class MainMenu {
 
     const multiplayerActions = document.createElement("div");
     multiplayerActions.className = "editor-button-row";
-    multiplayerActions.appendChild(createButton("Host Game", () => this.actions?.onHostLocal(this.roomInput.value, this.nameInput.value)));
-    multiplayerActions.appendChild(createButton("Join Game", () => this.actions?.onJoinLocal(this.roomInput.value, this.nameInput.value)));
+    multiplayerActions.appendChild(createButton("Start LAN Server", () => this.actions?.onCreateLanRoom(this.roomInput.value, this.nameInput.value), "primary"));
+    multiplayerActions.appendChild(createButton("Join by ID", () => this.actions?.onJoinLanRoom(this.roomInput.value, this.nameInput.value)));
     multiplayer.appendChild(multiplayerActions);
     actions.appendChild(multiplayer);
 
@@ -120,6 +132,37 @@ export class MainMenu {
     this.levelLabel.textContent = fileName ? `Imported: ${fileName}` : "Built-in blockout";
   }
 
+  setLanConnectionStatus(message: string, connected: boolean): void {
+    this.lanStatus.textContent = message;
+    this.lanStatus.classList.toggle("lan-status-online", connected);
+  }
+
+  setLanRooms(rooms: readonly LanRoomSummary[]): void {
+    this.roomList.replaceChildren();
+    if (rooms.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "lan-room-empty";
+      empty.textContent = "No rooms yet.";
+      this.roomList.appendChild(empty);
+      return;
+    }
+
+    for (const room of rooms) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "lan-room-row";
+      row.innerHTML = `
+        <span>${escapeHtml(room.name)}</span>
+        <small>${escapeHtml(room.phase)} · Host ${escapeHtml(room.hostName)} · ${room.playerCount} player${room.playerCount === 1 ? "" : "s"} · A ${room.teamCounts.A} / B ${room.teamCounts.B}</small>
+      `;
+      row.addEventListener("click", () => {
+        this.roomInput.value = room.id;
+        this.actions?.onJoinLanRoom(room.id, this.nameInput.value);
+      });
+      this.roomList.appendChild(row);
+    }
+  }
+
   show(): void {
     this.root.style.display = "flex";
   }
@@ -140,4 +183,21 @@ export class MainMenu {
     });
     reader.readAsText(file);
   }
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "\"":
+        return "&quot;";
+      default:
+        return "&#039;";
+    }
+  });
 }

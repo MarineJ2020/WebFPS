@@ -1,5 +1,6 @@
 export class DeathScreen {
   private readonly root: HTMLDivElement;
+  private readonly message: HTMLDivElement;
   private readonly restartButton: HTMLButtonElement;
   private readonly menuButton: HTMLButtonElement;
 
@@ -28,6 +29,15 @@ export class DeathScreen {
       textShadow: "0 0 12px #000",
     } satisfies Partial<CSSStyleDeclaration>);
     this.root.appendChild(title);
+
+    this.message = document.createElement("div");
+    this.message.textContent = "Respawning soon...";
+    Object.assign(this.message.style, {
+      marginBottom: "18px",
+      fontSize: "18px",
+      color: "rgba(255, 255, 255, 0.86)",
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.root.appendChild(this.message);
 
     this.restartButton = document.createElement("button");
     this.restartButton.textContent = "Restart";
@@ -62,5 +72,11 @@ export class DeathScreen {
 
   hide(): void {
     this.root.style.display = "none";
+  }
+
+  setRespawnCountdown(secondsRemaining: number, killerName?: string): void {
+    const seconds = Math.ceil(Math.max(0, secondsRemaining));
+    const killerText = killerName ? `Killed by ${killerName}. ` : "";
+    this.message.textContent = `${killerText}Respawning in ${seconds}s`;
   }
 }

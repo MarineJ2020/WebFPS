@@ -4,6 +4,7 @@ import { HUD } from "./hud/HUD";
 import { Scoreboard } from "./hud/Scoreboard";
 import { DeathScreen } from "./menus/DeathScreen";
 import { LoadingOverlay } from "./menus/LoadingOverlay";
+import { LocalLobbyMenu, type LocalLobbyActions } from "./menus/LocalLobbyMenu";
 import { MainMenu, type MainMenuActions } from "./menus/MainMenu";
 import { PauseMenu, type PauseMenuActions } from "./menus/PauseMenu";
 import { SettingsMenu } from "./menus/SettingsMenu";
@@ -12,6 +13,7 @@ export class UIRoot {
   readonly hud: HUD;
   readonly scoreboard: Scoreboard;
   readonly mainMenu: MainMenu;
+  readonly localLobbyMenu: LocalLobbyMenu;
   readonly pauseMenu: PauseMenu;
   readonly settingsMenu: SettingsMenu;
   readonly deathScreen: DeathScreen;
@@ -21,6 +23,7 @@ export class UIRoot {
     this.hud = new HUD(container);
     this.scoreboard = new Scoreboard(container);
     this.mainMenu = new MainMenu(container);
+    this.localLobbyMenu = new LocalLobbyMenu(container);
     this.pauseMenu = new PauseMenu(container);
     this.settingsMenu = new SettingsMenu(container, settingsStore);
     this.deathScreen = new DeathScreen(container);
@@ -39,6 +42,10 @@ export class UIRoot {
     this.pauseMenu.setActions(actions);
   }
 
+  setLocalLobbyActions(actions: LocalLobbyActions): void {
+    this.localLobbyMenu.setActions(actions);
+  }
+
   setDeathActions(actions: { onRestart: () => void; onMainMenu: () => void }): void {
     this.deathScreen.setActions(actions);
   }
@@ -47,6 +54,7 @@ export class UIRoot {
     this.settingsMenu.hide();
     this.hud.setVisible(mode === "playing" || mode === "paused");
     this.mainMenu.hide();
+    this.localLobbyMenu.hide();
     this.pauseMenu.hide();
     this.deathScreen.hide();
     this.loadingOverlay.hide();
@@ -57,6 +65,9 @@ export class UIRoot {
         break;
       case "loading":
         this.loadingOverlay.show("Loading match...");
+        break;
+      case "localLobby":
+        this.localLobbyMenu.show();
         break;
       case "paused":
         this.pauseMenu.show();

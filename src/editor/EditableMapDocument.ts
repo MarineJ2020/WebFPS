@@ -219,6 +219,15 @@ function normalizedSpawnPoints(document: EditableMapDocument): MapDefinition["sp
           ? point.patrolPoints.map((patrolPoint) => ({ ...patrolPoint.position }))
           : [{ ...point.position }],
       })),
+    points: enabled
+      .filter((point) => point.kind === "player")
+      .map((point) => ({
+        kind: "player" as const,
+        team: point.team,
+        position: { ...point.position },
+        enabled: point.enabled,
+        hidden: point.hidden,
+      })),
   };
 }
 

@@ -12,6 +12,8 @@ import { applyPlayerToCamera } from "./CameraRig";
 import { getWeaponConfig } from "../data/weapons/weaponTypes";
 import type { MapDefinition } from "../data/maps/MapDefinition";
 import type { SimulationWorld } from "../core/simulation/SimulationWorld";
+import type { LanCharacterSnapshot, LanMatchSnapshot } from "../net/LanProtocol";
+import { PLAYER_EYE_HEIGHT } from "../core/entities/Player";
 
 export class RenderWorld {
   readonly sceneManager: SceneManager;
@@ -80,6 +82,12 @@ export class RenderWorld {
     ];
   }
 
+  async bindNetworkWeapon(configId: string): Promise<void> {
+    this.clearSimulationBindings();
+    this.lastReloadTimer = 0;
+    await this.viewmodel.setWeapon(getWeaponConfig(configId));
+  }
+
   update(
     dt: number,
     simulation: SimulationWorld,
@@ -100,6 +108,58 @@ export class RenderWorld {
     applyPlayerToCamera(this.sceneManager.camera, player);
     this.entityRenderer.sync(simulation.aiCharacters);
     this.botDebug.sync(simulation.aiCharacters);
+  }
+
+  updateNetwork(
+    dt: number,
+    localPlayer: LanCharacterSnapshot,
+    snapshot: LanMatchSnapshot,
+    yawDelta: number,
+    pitchDelta: number,
+  ): void {
+    const weapon = localPlayer.weapon;
+    if (weapon.reloadTimer > 0 && this.lastReloadTimer <= 0) {
+      this.viewmodel.playReloadEffect(weapon.ammoInMag <= 0);
+    }
+    this.lastReloadTimer = weapon.reloadTimer;
+    this.viewmodel.setMagazineEmpty(weapon.ammoInMag <= 0 && weapon.reloadTimer <= 0);
+    this.viewmodel.update(dt, yawDelta, pitchDelta, true, 0);
+
+    this.sceneManager.camera.position.set(
+      localPlayer.position.x,
+      localPlayer.position.y + PLAYER_EYE_HEIGHT,
+      localPlayer.position.z,
+    );
+    this.sceneManager.camera.rotation.set(localPlayer.pitch, localPlayer.yaw, 0, "YXZ");
+
+    this.entityRenderer.syncNetwork([
+      ...snapshot.players
+        .filter((player) => player.id !== localPlayer.id)
+        .map((player) => ({
+          id: player.id,
+          name: player.name,
+          team: player.team,
+          position: player.position,
+          yaw: player.yaw,
+          dead: player.dead,
+          weaponConfigId: player.weapon.configId,
+        })),
+      ...snapshot.bots.map((bot) => ({
+        id: bot.id,
+        name: bot.name,
+        team: bot.team,
+        position: bot.position,
+        yaw: bot.yaw,
+        dead: bot.dead,
+        weaponConfigId: bot.weapon.configId,
+      })),
+    ]);
+
+    for (const shot of snapshot.shots) {
+      if (shot.shooterId === localPlayer.id) this.viewmodel.playFireEffect(localPlayer.weapon.ammoInMag === 0);
+      this.tracer.spawn(shot.from, shot.to);
+    }
+    this.tracer.update(dt);
   }
 
   render(): void {
