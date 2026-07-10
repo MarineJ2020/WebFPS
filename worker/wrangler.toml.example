@@ -1,0 +1,15 @@
+name = "webfps-online"
+main = "src/index.ts"
+compatibility_date = "2026-07-10"
+
+[vars]
+FIREBASE_PROJECT_ID = "your-firebase-project-id"
+ALLOW_GUESTS = "true"
+
+[[durable_objects.bindings]]
+name = "ROOM_DURABLE_OBJECT"
+class_name = "RoomDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDurableObject"]

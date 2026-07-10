@@ -1,39 +1,38 @@
 import type { PlayerCommand } from "../core/simulation/commands/PlayerCommand";
+import { createDefaultSessionDefinition } from "../data/session/GameSessionDefinition";
 import type { MapDefinition } from "../data/maps/MapDefinition";
 import type {
   LanClientMessage,
-  LanLobbyState,
-  LanMatchSnapshot,
   LanRoomSummary,
   LanServerMessage,
   LocalTeam,
+  ServerBrowserEntry,
 } from "./LanProtocol";
+import type { MultiplayerSession, MultiplayerSessionEvents } from "./MultiplayerSession";
 
-export interface LanMultiplayerClientEvents {
-  onConnectionChange: (status: string, connected: boolean) => void;
-  onWelcome: (clientId: string) => void;
-  onRoomList: (rooms: LanRoomSummary[]) => void;
-  onLobby: (lobby: LanLobbyState) => void;
-  onMatchStarted: (roomId: string, map: MapDefinition) => void;
-  onSnapshot: (snapshot: LanMatchSnapshot) => void;
-  onError: (message: string) => void;
-}
+export interface LanMultiplayerClientEvents extends MultiplayerSessionEvents {}
 
-export class LanMultiplayerClient {
+export class LanMultiplayerClient implements MultiplayerSession {
+  readonly mode = "dedicated" as const;
   private readonly events: LanMultiplayerClientEvents;
   private socket: WebSocket | null = null;
   private reconnectTimer = 0;
   private inputSequence = 0;
   private playerName = "Player";
+  private map: MapDefinition = createDefaultSessionDefinition().map;
 
   constructor(events: LanMultiplayerClientEvents) {
     this.events = events;
     this.connect();
   }
 
+  setMap(map: MapDefinition): void {
+    this.map = map;
+  }
+
   createRoom(roomName: string, playerName: string): void {
     this.playerName = normalizeName(playerName);
-    this.send({ type: "createRoom", roomName, playerName: this.playerName });
+    this.send({ type: "createRoom", roomName, playerName: this.playerName, map: this.map });
   }
 
   joinRoom(roomId: string, playerName: string): void {
@@ -103,7 +102,13 @@ export class LanMultiplayerClient {
         this.events.onWelcome(message.clientId);
         break;
       case "roomList":
-        this.events.onRoomList(message.rooms);
+        this.events.onRoomList(toDedicatedBrowserEntries(message.rooms));
+        break;
+      case "p2pRoomList":
+      case "p2pJoinRequested":
+      case "webrtcOffer":
+      case "webrtcAnswer":
+      case "webrtcIceCandidate":
         break;
       case "lobby":
         this.events.onLobby(message.lobby);
@@ -134,4 +139,12 @@ export class LanMultiplayerClient {
 function normalizeName(name: string): string {
   const trimmed = name.trim();
   return trimmed ? trimmed.slice(0, 24) : "Player";
+}
+
+function toDedicatedBrowserEntries(rooms: readonly LanRoomSummary[]): ServerBrowserEntry[] {
+  return rooms.map((room) => ({
+    ...room,
+    mode: "dedicated",
+    endpointType: "dedicated",
+  }));
 }

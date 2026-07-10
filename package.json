@@ -6,21 +6,30 @@
   "scripts": {
     "dev": "vite",
     "dev:lan": "tsx server/lanServer.ts",
-    "build": "tsc && vite build",
+    "build": "npm run build:client",
+    "build:client": "tsc && vite build",
+    "worker:check": "tsc -p worker/tsconfig.json",
+    "deploy:firebase": "firebase deploy --only hosting",
+    "deploy:cloudflare": "wrangler deploy --config worker/wrangler.toml",
+    "deploy:all": "npm run test && npm run build:client && npm run worker:check && npm run deploy:firebase && npm run deploy:cloudflare",
     "preview": "vite preview",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260710.1",
     "@types/three": "^0.185.0",
     "@types/ws": "^8.18.1",
     "@types/yuka": "^0.7.4",
+    "firebase-tools": "^15.23.0",
     "tsx": "^4.23.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.110.0"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
+    "firebase": "^12.16.0",
     "three": "^0.185.1",
     "ws": "^8.21.0",
     "yuka": "^0.7.8"

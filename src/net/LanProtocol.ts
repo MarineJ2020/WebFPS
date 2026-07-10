@@ -6,6 +6,19 @@ export type LocalTeam = "A" | "B";
 export type LanMatchPhase = "lobby" | "warmup" | "countdown" | "live" | "roundEnd" | "rematch";
 export type LanRoomPhase = LanMatchPhase;
 export type LanPickupKind = "ammo_box" | "health_pack";
+export type MultiplayerMode = "dedicated" | "p2p-host" | "p2p-peer";
+export type ServerBrowserEndpointType = "dedicated" | "p2p";
+export interface WebRTCSessionDescriptionLike {
+  type: "offer" | "answer" | "pranswer" | "rollback";
+  sdp?: string;
+}
+
+export interface WebRTCIceCandidateLike {
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+}
 
 export interface LanRoomPlayer {
   id: string;
@@ -22,6 +35,13 @@ export interface LanRoomSummary {
   hostName: string;
   playerCount: number;
   teamCounts: Record<LocalTeam, number>;
+  mode?: MultiplayerMode;
+  endpointType?: ServerBrowserEndpointType;
+}
+
+export interface ServerBrowserEntry extends LanRoomSummary {
+  mode: MultiplayerMode;
+  endpointType: ServerBrowserEndpointType;
 }
 
 export interface LanLobbyState {
@@ -95,9 +115,14 @@ export interface LanMatchSnapshot {
   kills: LanKillEvent[];
 }
 
+export interface P2PRoomSummary extends ServerBrowserEntry {
+  mode: "p2p-host";
+  endpointType: "p2p";
+}
+
 export type LanClientMessage =
   | { type: "hello"; playerName: string }
-  | { type: "createRoom"; roomName: string; playerName: string }
+  | { type: "createRoom"; roomName: string; playerName: string; map?: MapDefinition }
   | { type: "joinRoom"; roomId: string; playerName: string }
   | { type: "leaveRoom" }
   | { type: "setTeam"; team: LocalTeam }
@@ -106,11 +131,23 @@ export type LanClientMessage =
   | { type: "returnToLobby" }
   | { type: "ready" }
   | { type: "input"; sequence: number; command: PlayerCommand }
-  | { type: "ping"; clientTime: number };
+  | { type: "ping"; clientTime: number }
+  | { type: "registerP2PRoom"; room: P2PRoomSummary }
+  | { type: "p2pHostHeartbeat"; roomId: string }
+  | { type: "unregisterP2PRoom"; roomId: string }
+  | { type: "joinP2PRoom"; roomId: string; playerName: string }
+  | { type: "webrtcOffer"; toClientId: string; roomId: string; description: WebRTCSessionDescriptionLike }
+  | { type: "webrtcAnswer"; toClientId: string; roomId: string; description: WebRTCSessionDescriptionLike }
+  | { type: "webrtcIceCandidate"; toClientId: string; roomId: string; candidate: WebRTCIceCandidateLike };
 
 export type LanServerMessage =
   | { type: "welcome"; clientId: string }
   | { type: "roomList"; rooms: LanRoomSummary[] }
+  | { type: "p2pRoomList"; rooms: P2PRoomSummary[] }
+  | { type: "p2pJoinRequested"; roomId: string; peerClientId: string; playerName: string }
+  | { type: "webrtcOffer"; fromClientId: string; roomId: string; description: WebRTCSessionDescriptionLike }
+  | { type: "webrtcAnswer"; fromClientId: string; roomId: string; description: WebRTCSessionDescriptionLike }
+  | { type: "webrtcIceCandidate"; fromClientId: string; roomId: string; candidate: WebRTCIceCandidateLike }
   | { type: "lobby"; lobby: LanLobbyState }
   | { type: "matchStarted"; roomId: string; map: MapDefinition }
   | { type: "snapshot"; snapshot: LanMatchSnapshot }

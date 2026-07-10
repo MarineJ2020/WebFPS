@@ -1,1 +1,1 @@
-export type GameModeState = "mainMenu" | "localLobby" | "loading" | "playing" | "paused" | "dead" | "editing";
+export type GameModeState = "mainMenu" | "localLobby" | "onlineLobby" | "loading" | "playing" | "paused" | "dead" | "editing";

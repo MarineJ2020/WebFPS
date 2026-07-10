@@ -3,21 +3,32 @@ import type { PlayerCommand } from "../core/simulation/commands/PlayerCommand";
 import { emptyPlayerCommand } from "../core/simulation/commands/PlayerCommand";
 import type { SimulationWorld } from "../core/simulation/SimulationWorld";
 import { getWeaponConfig } from "../data/weapons/weaponTypes";
+import { createImportedLevel, getSelectableLevels, type SelectableLevel } from "../data/levels/LevelRegistry";
 import { createDefaultSessionDefinition, type GameSessionDefinition } from "../data/session/GameSessionDefinition";
+import { AuthService } from "../firebase/AuthService";
+import { getFirebaseConfig } from "../firebase/FirebaseApp";
+import { ProfileService } from "../firebase/ProfileService";
+import { resizeAvatarToWebp } from "../profile/AvatarService";
+import {
+  calculateKda,
+  createGuestSession,
+  defaultStats,
+  type AuthSession,
+  type PlayerProfile,
+  type PlayerSession,
+} from "../profile/ProfileTypes";
 import { SettingsStore } from "../ui/SettingsStore";
 import { UIRoot } from "../ui/UIRoot";
 import { RenderWorld } from "../render/RenderWorld";
 import { LevelEditor, runtimeMapFromEditor } from "../editor/LevelEditor";
-import type { EditableMapDocument } from "../editor/EditableMapDocument";
-import type { MapDefinition } from "../data/maps/MapDefinition";
 import { GameLoop } from "./GameLoop";
 import type { GameModeState } from "./GameModeState";
 import { SessionController } from "./SessionController";
 import { Scoreboard, type ScoreboardRow } from "../ui/hud/Scoreboard";
-import { LanMultiplayerClient } from "../net/LanMultiplayerClient";
+import { OnlineMultiplayerClient } from "../net/OnlineMultiplayerClient";
 import { NetworkSnapshotBuffer } from "../net/NetworkSnapshotBuffer";
-import type { LanLobbyState, LanMatchSnapshot, LanRoomSummary, LanShotEvent } from "../net/LanProtocol";
-import { ASSAULT_RIFLE_01 } from "../data/weapons/weaponTypes";
+import type { LanCharacterSnapshot, LanMatchSnapshot } from "../net/LanProtocol";
+import type { OnlineServerMessage } from "../net/OnlineProtocolTypes";
 
 const RESPAWN_SECONDS = 3;
 
@@ -30,27 +41,34 @@ export class Game {
   private readonly loop = new GameLoop();
   private readonly sessions = new SessionController();
   private readonly levelEditor: LevelEditor;
+  private readonly authService = new AuthService();
+  private readonly profileService = new ProfileService();
+  private readonly onlineClient: OnlineMultiplayerClient;
   private simulation: SimulationWorld | null = null;
   private mode: GameModeState = "mainMenu";
   private readonly scores = new Map<string, ScoreboardRow>();
   private readonly pendingRespawns = new Set<string>();
   private scoreUnsubscribers: Array<() => void> = [];
-  private readonly lanClient: LanMultiplayerClient;
-  private lanSelfId = "";
-  private lanLobby: LanLobbyState | null = null;
-  private lanSnapshot: LanMatchSnapshot | null = null;
-  private readonly lanSnapshotBuffer = new NetworkSnapshotBuffer();
-  private readonly pendingLanShots: LanShotEvent[] = [];
-  private lanMatchActive = false;
-  private lanWeaponBound = false;
-  private lastKillerName = "";
-  private importedMenuLevel: { name: string; map: MapDefinition } | null = null;
+  private playerSession: PlayerSession = createGuestSession();
+  private playerProfile: PlayerProfile | null = null;
+  private readonly menuLevels: SelectableLevel[] = getSelectableLevels();
+  private selectedLevelId = this.menuLevels[0]?.id ?? "";
+  private onlineLatestSnapshot: LanMatchSnapshot | null = null;
+  private readonly onlineSnapshotBuffer = new NetworkSnapshotBuffer();
+  private onlineWeaponConfigId = "";
+  private onlineLocalDead = false;
 
   constructor(container: HTMLElement) {
     this.renderWorld = new RenderWorld(container);
     this.inputManager = new InputManager(this.renderWorld.domElement);
     this.ui = new UIRoot(container, this.settingsStore);
     this.scoreboard = this.ui.scoreboard ?? new Scoreboard(container);
+    this.onlineClient = new OnlineMultiplayerClient({
+      onStatus: (message, connected) => this.ui.mainMenu.setOnlineStatus(message, connected),
+      onMessage: (message) => {
+        this.handleOnlineMessage(message);
+      },
+    });
     this.levelEditor = new LevelEditor(
       container,
       this.renderWorld.sceneManager.scene,
@@ -69,17 +87,10 @@ export class Game {
     );
 
     this.wireUI();
-    this.lanClient = new LanMultiplayerClient({
-      onConnectionChange: (message, connected) => this.ui.mainMenu.setLanConnectionStatus(message, connected),
-      onWelcome: (clientId) => {
-        this.lanSelfId = clientId;
-      },
-      onRoomList: (rooms) => this.onLanRoomList(rooms),
-      onLobby: (lobby) => this.onLanLobby(lobby),
-      onMatchStarted: (_roomId, map) => void this.onLanMatchStarted(map),
-      onSnapshot: (snapshot) => this.onLanSnapshot(snapshot),
-      onError: (message) => this.ui.mainMenu.setStatus(message),
-    });
+    this.syncLevelSelector();
+    this.authService.onChange((session) => void this.handleFirebaseSession(session));
+    this.authService.start();
+    this.applyProfileView();
     this.applySettings(this.settingsStore.get());
     this.settingsStore.onChange((settings) => this.applySettings(settings));
     document.addEventListener("keydown", this.onKeyDown);
@@ -105,15 +116,31 @@ export class Game {
   private wireUI(): void {
     this.ui.setMainMenuActions({
       onStartGame: () => void this.startGame(this.createMenuSessionDefinition()),
-      onCreateLanRoom: (roomName, playerName) => this.createLanRoom(roomName, playerName),
-      onJoinLanRoom: (roomId, playerName) => this.joinLanRoom(roomId, playerName),
+      onSelectLevel: (levelId) => this.selectMenuLevel(levelId),
       onImportLevel: (json, fileName) => this.importMenuLevel(json, fileName),
-      onClearImportedLevel: () => {
-        this.importedMenuLevel = null;
-        this.ui.mainMenu.setStatus("Using built-in blockout level.");
-      },
+      onSignInGoogle: () => void this.signInGoogle(),
+      onContinueGuest: () => this.continueAsGuest(),
+      onSignOut: () => void this.signOut(),
+      onUploadAvatar: (file) => void this.uploadAvatar(file),
+      onJoinOnline: () => void this.joinOnline(),
       onOpenEditor: () => this.openEditor(),
       onOpenSettings: () => this.ui.settingsMenu.show(),
+    });
+
+    this.ui.setOnlineLobbyActions({
+      onCreateRoom: (roomName) => this.onlineClient.createRoom(roomName, this.playerDisplayName(), this.selectedMenuLevel().map),
+      onJoinRoom: (roomId) => this.onlineClient.joinRoom(roomId, this.playerDisplayName()),
+      onRefreshRooms: () => this.joinOnline(),
+      onSetTeam: (team) => this.onlineClient.setTeam(team),
+      onStartMatch: () => this.onlineClient.startMatch(),
+      onLeave: () => {
+        this.onlineClient.leaveRoom();
+        this.ui.onlineLobbyMenu.showBrowser();
+      },
+      onBack: () => {
+        this.onlineClient.disconnect();
+        this.showMainMenu();
+      },
     });
 
     this.ui.setPauseMenuActions({
@@ -123,18 +150,13 @@ export class Game {
       onMainMenu: () => this.showMainMenu(),
     });
 
-    this.ui.setLocalLobbyActions({
-      onSetTeam: (team) => this.lanClient.setTeam(team),
-      onStartMatch: () => this.lanClient.startMatch(),
-      onLeave: () => this.showMainMenu(),
-    });
-    this.ui.matchFlowOverlay.onVoteRematch = () => this.lanClient.voteRematch();
-    this.ui.matchFlowOverlay.onReturnToLobby = () => this.lanClient.returnToLobby();
-
     this.ui.setDeathActions({
       onRestart: () => void this.restartGame(),
       onMainMenu: () => this.showMainMenu(),
     });
+
+    this.ui.matchFlowOverlay.onVoteRematch = () => this.onlineClient.voteRematch();
+    this.ui.matchFlowOverlay.onReturnToLobby = () => this.onlineClient.returnToLobby();
   }
 
   private async startGame(definition: GameSessionDefinition): Promise<void> {
@@ -148,11 +170,6 @@ export class Game {
   }
 
   private async restartGame(): Promise<void> {
-    if (this.lanMatchActive) {
-      this.ui.deathScreen.setRespawnCountdown(0);
-      return;
-    }
-
     const restarted = await this.sessions.restart(this.renderWorld.hitscan);
     if (!restarted || !this.sessions.definition) {
       await this.startGame(createDefaultSessionDefinition());
@@ -175,29 +192,17 @@ export class Game {
 
   private showMainMenu(): void {
     this.simulation = null;
-    if (this.lanLobby || this.lanMatchActive) this.lanClient.leaveRoom();
-    this.lanLobby = null;
-    this.lanSnapshot = null;
-    this.lanSnapshotBuffer.clear();
-    this.pendingLanShots.length = 0;
-    this.lanMatchActive = false;
-    this.lanWeaponBound = false;
     this.sessions.clear();
+    this.onlineClient.disconnect();
     this.levelEditor.hide();
     this.renderWorld.clearSimulationBindings();
     this.clearDeathmatchBindings();
+    this.clearOnlineMatch();
     this.setMode("mainMenu");
   }
 
   private openEditor(): void {
     this.simulation = null;
-    if (this.lanLobby || this.lanMatchActive) this.lanClient.leaveRoom();
-    this.lanLobby = null;
-    this.lanSnapshot = null;
-    this.lanSnapshotBuffer.clear();
-    this.pendingLanShots.length = 0;
-    this.lanMatchActive = false;
-    this.lanWeaponBound = false;
     this.sessions.clear();
     this.renderWorld.clearSimulationBindings();
     this.clearDeathmatchBindings();
@@ -227,13 +232,24 @@ export class Game {
       return;
     }
 
-    if (this.lanMatchActive && this.lanSnapshot && (this.mode === "playing" || this.mode === "dead")) {
-      this.tickLanMatch(frameDelta);
+    const simulation = this.simulation;
+    if (this.onlineLatestSnapshot && (this.mode === "playing" || this.mode === "dead")) {
+      const command = this.mode === "playing" ? this.inputManager.consumeCommand() : emptyPlayerCommand();
+      if (this.mode === "playing") this.onlineClient.sendInput(command);
+
+      const localPlayer = this.onlineLatestSnapshot.players.find((player) => player.id === this.onlineClient.selfId);
+      const renderSnapshot = this.onlineSnapshotBuffer.sample() ?? this.onlineLatestSnapshot;
+      const renderLocalPlayer = renderSnapshot.players.find((player) => player.id === this.onlineClient.selfId) ?? localPlayer;
+      if (localPlayer && renderLocalPlayer) {
+        this.renderWorld.updateNetwork(frameDelta, renderLocalPlayer, renderSnapshot, command.yawDelta, command.pitchDelta);
+        this.updateOnlineHUD(localPlayer);
+        this.updateOnlineScoreboard(this.onlineLatestSnapshot);
+        this.updateOnlineDeathState(localPlayer);
+      }
       this.renderWorld.render();
       return;
     }
 
-    const simulation = this.simulation;
     if (simulation && this.mode === "playing") {
       const command = simulation.player.health > 0 ? this.inputManager.consumeCommand() : emptyPlayerCommand();
       const commandsByEntityId = new Map<string, PlayerCommand>([[simulation.player.id, command]]);
@@ -266,62 +282,6 @@ export class Game {
     const spreadRange = config.maxSpread - config.baseSpread;
     const spreadFraction = spreadRange > 0 ? (weapon.currentSpread - config.baseSpread) / spreadRange : 0;
     this.ui.hud.setCrosshairSpread(spreadFraction);
-  }
-
-  private tickLanMatch(frameDelta: number): void {
-    const snapshot = this.lanSnapshot;
-    if (!snapshot) return;
-    const localPlayer = snapshot.players.find((player) => player.id === this.lanSelfId);
-    if (!localPlayer) return;
-    const acceptsInput = snapshot.phase === "warmup" || snapshot.phase === "countdown" || snapshot.phase === "live";
-    this.inputManager.setPointerLockEnabled(this.mode === "playing" && acceptsInput && !localPlayer.dead);
-
-    const command = this.mode === "playing" && acceptsInput && !localPlayer.dead
-      ? this.inputManager.consumeCommand()
-      : emptyPlayerCommand();
-    this.lanClient.sendInput(command);
-    const renderSnapshot = this.lanSnapshotBuffer.sample() ?? snapshot;
-    this.renderWorld.updateNetwork(
-      frameDelta,
-      localPlayer,
-      { ...renderSnapshot, shots: this.pendingLanShots.splice(0) },
-      command.yawDelta,
-      command.pitchDelta,
-    );
-    this.updateNetworkHUD(localPlayer);
-    this.updateNetworkScoreboard(snapshot);
-    this.ui.matchFlowOverlay.update(snapshot);
-    if (snapshot.phase === "roundEnd" || snapshot.phase === "rematch") this.scoreboard.setVisible(true);
-
-    if (localPlayer.dead) {
-      this.ui.deathScreen.setRespawnCountdown(localPlayer.respawnRemaining, this.lastKillerName);
-      if (this.mode !== "dead") this.setMode("dead");
-    } else if (this.mode === "dead") {
-      this.lastKillerName = "";
-      this.setMode("playing");
-    }
-  }
-
-  private updateNetworkHUD(player: LanMatchSnapshot["players"][number]): void {
-    this.ui.hud.setAmmoStatus(
-      player.weapon.fireModeKind,
-      player.weapon.ammoInMag,
-      player.weapon.ammoReserve,
-      player.weapon.reloadTimer > 0,
-    );
-    this.ui.hud.setHealth(player.health, player.maxHealth);
-    this.ui.hud.setCrosshairSpread(0);
-  }
-
-  private updateNetworkScoreboard(snapshot: LanMatchSnapshot): void {
-    this.scoreboard.setRows([...snapshot.players, ...snapshot.bots].map((character) => ({
-      id: character.id,
-      name: character.name,
-      team: character.team,
-      kills: character.kills,
-      deaths: character.deaths,
-      ping: 0,
-    })));
   }
 
   private bindDeathmatch(simulation: SimulationWorld): void {
@@ -361,102 +321,230 @@ export class Game {
     this.updateScoreboard();
   }
 
-  private createLanRoom(roomName: string, playerName: string): void {
-    this.simulation = null;
-    this.sessions.clear();
-    this.clearDeathmatchBindings();
-    this.lanClient.createRoom(roomName.trim() || "WebFPS Room", playerName);
-    this.ui.mainMenu.setStatus("Creating LAN room...");
-  }
-
-  private joinLanRoom(roomId: string, playerName: string): void {
-    const id = roomId.trim();
-    if (!id) {
-      this.ui.mainMenu.setStatus("Choose a room or enter a room id.");
+  private async handleFirebaseSession(session: AuthSession | null): Promise<void> {
+    if (!session) {
+      if (this.playerSession.kind !== "guest") this.continueAsGuest();
+      this.applyProfileView();
       return;
     }
-    this.simulation = null;
-    this.sessions.clear();
-    this.clearDeathmatchBindings();
-    this.lanClient.joinRoom(id, playerName);
-    this.ui.mainMenu.setStatus("Joining LAN room...");
+
+    this.playerSession = session;
+    try {
+      this.playerProfile = await this.profileService.loadOrCreateProfile(session);
+      this.applyProfileView();
+      this.ui.mainMenu.setStatus(`Signed in as ${this.playerProfile.customization.displayName}.`);
+    } catch (error) {
+      this.playerProfile = null;
+      this.applyProfileView();
+      this.ui.mainMenu.setStatus(error instanceof Error ? `Profile load failed: ${error.message}` : "Profile load failed.");
+    }
+  }
+
+  private async signInGoogle(): Promise<void> {
+    try {
+      await this.authService.signInWithGoogle();
+    } catch (error) {
+      this.ui.mainMenu.setStatus(error instanceof Error ? error.message : "Google sign-in failed.");
+    }
+  }
+
+  private continueAsGuest(): void {
+    this.playerSession = this.authService.createGuest("Guest");
+    this.playerProfile = null;
+    this.applyProfileView();
+    this.ui.mainMenu.setStatus("Using an ephemeral guest profile.");
+  }
+
+  private async signOut(): Promise<void> {
+    try {
+      await this.authService.signOut();
+      this.continueAsGuest();
+    } catch (error) {
+      this.ui.mainMenu.setStatus(error instanceof Error ? error.message : "Sign out failed.");
+    }
+  }
+
+  private async uploadAvatar(file: File): Promise<void> {
+    try {
+      const avatarDataUrl = await resizeAvatarToWebp(file);
+      if (this.playerSession.kind === "guest") {
+        this.playerSession = { ...this.playerSession, avatarDataUrl };
+        this.applyProfileView();
+        this.ui.mainMenu.setStatus("Guest avatar updated for this session.");
+        return;
+      }
+      const profile = this.playerProfile ?? await this.profileService.loadOrCreateProfile(this.playerSession);
+      this.playerProfile = {
+        ...profile,
+        customization: {
+          ...profile.customization,
+          avatarDataUrl,
+          avatarUrl: null,
+        },
+      };
+      await this.profileService.saveCustomization(this.playerSession.uid, this.playerProfile.customization);
+      this.applyProfileView();
+      this.ui.mainMenu.setStatus("Avatar resized to 512x512 WebP and saved to profile.");
+    } catch (error) {
+      this.ui.mainMenu.setStatus(error instanceof Error ? `Avatar update failed: ${error.message}` : "Avatar update failed.");
+    }
+  }
+
+  private async joinOnline(): Promise<void> {
+    await this.onlineClient.connect(this.playerSession);
+    this.ui.onlineLobbyMenu.setStatus("Connecting to online server...");
+    this.ui.onlineLobbyMenu.showBrowser();
+    this.setMode("onlineLobby");
+  }
+
+  private async handleOnlineMessage(message: OnlineServerMessage): Promise<void> {
+    switch (message.type) {
+      case "profileSummary":
+        this.ui.onlineLobbyMenu.setStatus(`Connected as ${message.profile.displayName}.`);
+        break;
+      case "onlineRoomList":
+        this.ui.onlineLobbyMenu.setRooms(message.rooms);
+        this.ui.onlineLobbyMenu.setStatus(message.rooms.length > 0 ? "Choose a room or create a new one." : "No open rooms yet. Create one to host.");
+        break;
+      case "onlineLobby":
+        this.ui.onlineLobbyMenu.setLobby(message.lobby, this.onlineClient.selfId);
+        this.setMode("onlineLobby");
+        break;
+      case "onlineMatchStarted":
+        this.levelEditor.hide();
+        this.clearDeathmatchBindings();
+        this.clearOnlineMatch();
+        this.renderWorld.loadMap(message.map);
+        this.onlineWeaponConfigId = "";
+        this.setMode("playing");
+        break;
+      case "onlineSnapshot":
+        await this.applyOnlineSnapshot(message.snapshot);
+        break;
+      case "error":
+        this.ui.mainMenu.setStatus(message.message);
+        this.ui.onlineLobbyMenu.setStatus(message.message);
+        break;
+    }
+  }
+
+  private async applyOnlineSnapshot(snapshot: LanMatchSnapshot): Promise<void> {
+    this.onlineLatestSnapshot = snapshot;
+    this.onlineSnapshotBuffer.push(snapshot);
+    const localPlayer = snapshot.players.find((player) => player.id === this.onlineClient.selfId);
+    if (!localPlayer) return;
+    if (this.onlineWeaponConfigId !== localPlayer.weapon.configId) {
+      this.onlineWeaponConfigId = localPlayer.weapon.configId;
+      await this.renderWorld.bindNetworkWeapon(localPlayer.weapon.configId);
+    }
+  }
+
+  private updateOnlineHUD(player: LanCharacterSnapshot): void {
+    this.ui.hud.setAmmoStatus(player.weapon.fireModeKind, player.weapon.ammoInMag, player.weapon.ammoReserve, player.weapon.reloadTimer > 0);
+    this.ui.hud.setHealth(player.health, player.maxHealth);
+    this.ui.hud.setCrosshairSpread(0);
+  }
+
+  private updateOnlineScoreboard(snapshot: LanMatchSnapshot): void {
+    this.scoreboard.setRows([...snapshot.players, ...snapshot.bots].map((character) => ({
+      id: character.id,
+      name: character.id === this.onlineClient.selfId ? `${character.name} (You)` : character.name,
+      team: character.team,
+      kills: character.kills,
+      deaths: character.deaths,
+      ping: 0,
+    })));
+    this.ui.matchFlowOverlay.update(snapshot);
+  }
+
+  private updateOnlineDeathState(player: LanCharacterSnapshot): void {
+    if (player.dead) {
+      const kill = this.onlineLatestSnapshot?.kills.find((event) => event.victimId === player.id);
+      this.ui.deathScreen.setRespawnCountdown(player.respawnRemaining, kill?.killerName);
+      if (!this.onlineLocalDead) {
+        this.onlineLocalDead = true;
+        this.setMode("dead");
+      }
+      return;
+    }
+
+    if (this.onlineLocalDead && this.mode === "dead") this.setMode("playing");
+    this.onlineLocalDead = false;
+  }
+
+  private applyProfileView(): void {
+    const firebaseConfigured = Boolean(getFirebaseConfig());
+    if (this.playerSession.kind === "guest") {
+      const stats = defaultStats();
+      this.ui.mainMenu.setProfile({
+        displayName: this.playerSession.displayName,
+        avatarUrl: null,
+        avatarDataUrl: this.playerSession.avatarDataUrl,
+        accentColor: this.playerSession.accentColor,
+        isGuest: true,
+        firebaseConfigured,
+        ...stats,
+        kda: calculateKda(stats),
+      });
+      return;
+    }
+
+    const profile = this.playerProfile;
+    const stats = profile?.stats ?? defaultStats();
+    this.ui.mainMenu.setProfile({
+      displayName: profile?.customization.displayName ?? this.playerSession.displayName,
+      avatarUrl: profile?.customization.avatarUrl ?? this.playerSession.photoUrl,
+      avatarDataUrl: profile?.customization.avatarDataUrl ?? null,
+      accentColor: profile?.customization.accentColor ?? "#6bb8ff",
+      isGuest: false,
+      firebaseConfigured,
+      ...stats,
+      kda: calculateKda(stats),
+    });
   }
 
   private importMenuLevel(json: string, fileName: string): void {
     try {
-      const parsed = JSON.parse(json) as unknown;
-      const map = isEditableMapDocument(parsed)
-        ? runtimeMapFromEditor(parsed)
-        : coerceMapDefinition(parsed);
-      this.importedMenuLevel = {
-        name: isEditableMapDocument(parsed) ? parsed.name || fileName : fileName.replace(/\.json$/i, ""),
-        map,
-      };
-      this.ui.mainMenu.setImportedLevelLabel(fileName);
-      this.ui.mainMenu.setStatus(`Loaded level "${this.importedMenuLevel.name}" for Start/Host/Join.`);
+      const level = createImportedLevel(json, fileName);
+      const uniqueLevel = this.withUniqueLevelId(level);
+      this.menuLevels.push(uniqueLevel);
+      this.selectedLevelId = uniqueLevel.id;
+      this.syncLevelSelector();
+      this.ui.mainMenu.setStatus(`Loaded level "${uniqueLevel.name}" for Start/Host/Join.`);
     } catch (error) {
-      this.importedMenuLevel = null;
-      this.ui.mainMenu.setImportedLevelLabel(null);
       this.ui.mainMenu.setStatus(error instanceof Error ? `Level import failed: ${error.message}` : "Level import failed.");
     }
   }
 
   private createMenuSessionDefinition(): GameSessionDefinition {
-    return createDefaultSessionDefinition(this.importedMenuLevel?.map);
+    return createDefaultSessionDefinition(this.selectedMenuLevel().map);
   }
 
-  private onLanRoomList(rooms: LanRoomSummary[]): void {
-    this.ui.mainMenu.setLanRooms(rooms);
+  private selectMenuLevel(levelId: string): void {
+    const level = this.menuLevels.find((candidate) => candidate.id === levelId);
+    if (!level) return;
+    this.selectedLevelId = level.id;
+    this.ui.mainMenu.setStatus(`Selected level "${level.name}".`);
   }
 
-  private onLanLobby(lobby: LanLobbyState): void {
-    this.lanLobby = lobby;
-    this.ui.localLobbyMenu.setLobby(lobby, this.lanSelfId);
-    if (lobby.phase === "lobby") {
-      this.lanMatchActive = false;
-      this.lanSnapshot = null;
-      this.lanSnapshotBuffer.clear();
-      this.pendingLanShots.length = 0;
-      this.lanWeaponBound = false;
-      this.renderWorld.clearSimulationBindings();
-      this.clearDeathmatchBindings();
-      this.setMode("localLobby");
-      return;
-    }
-    if (!this.lanMatchActive) this.setMode("localLobby");
+  private selectedMenuLevel(): SelectableLevel {
+    return this.menuLevels.find((level) => level.id === this.selectedLevelId) ?? this.menuLevels[0];
   }
 
-  private async onLanMatchStarted(map: MapDefinition): Promise<void> {
-    this.lanMatchActive = true;
-    this.lanSnapshot = null;
-    this.lanSnapshotBuffer.clear();
-    this.pendingLanShots.length = 0;
-    this.lanWeaponBound = false;
-    this.simulation = null;
-    this.sessions.clear();
-    this.clearDeathmatchBindings();
-    this.levelEditor.hide();
-    this.setMode("loading");
-    this.renderWorld.loadMap(map);
-    await this.renderWorld.bindNetworkWeapon(ASSAULT_RIFLE_01.id);
-    this.lanWeaponBound = true;
-    this.setMode("playing");
+  private syncLevelSelector(): void {
+    this.ui.mainMenu.setLevels(this.menuLevels.map((level) => ({
+      id: level.id,
+      name: level.name,
+      source: level.source,
+    })), this.selectedLevelId);
   }
 
-  private onLanSnapshot(snapshot: LanMatchSnapshot): void {
-    this.lanSnapshot = snapshot;
-    this.lanSnapshotBuffer.push(snapshot);
-    this.pendingLanShots.push(...snapshot.shots);
-    const localKill = snapshot.kills.find((kill) => kill.victimId === this.lanSelfId);
-    if (localKill) this.lastKillerName = localKill.killerName;
-    if (!this.lanWeaponBound) {
-      const localPlayer = snapshot.players.find((player) => player.id === this.lanSelfId);
-      if (localPlayer) {
-        void this.renderWorld.bindNetworkWeapon(localPlayer.weapon.configId).then(() => {
-          this.lanWeaponBound = true;
-        });
-      }
-    }
+  private withUniqueLevelId(level: SelectableLevel): SelectableLevel {
+    if (!this.menuLevels.some((candidate) => candidate.id === level.id)) return level;
+    let suffix = 2;
+    let id = `${level.id}-${suffix}`;
+    while (this.menuLevels.some((candidate) => candidate.id === id)) id = `${level.id}-${++suffix}`;
+    return { ...level, id };
   }
 
   private clearDeathmatchBindings(): void {
@@ -464,6 +552,18 @@ export class Game {
     this.scoreUnsubscribers = [];
     this.pendingRespawns.clear();
     this.scoreboard.setVisible(false);
+  }
+
+  private clearOnlineMatch(): void {
+    this.onlineLatestSnapshot = null;
+    this.onlineSnapshotBuffer.clear();
+    this.onlineWeaponConfigId = "";
+    this.onlineLocalDead = false;
+  }
+
+  private playerDisplayName(): string {
+    if (this.playerSession.kind === "guest") return this.playerSession.displayName;
+    return this.playerProfile?.customization.displayName ?? this.playerSession.displayName;
   }
 
   private scheduleRespawn(entityId: string): void {
@@ -505,30 +605,4 @@ export class Game {
       this.scoreboard.setVisible(false);
     }
   };
-}
-
-function isEditableMapDocument(value: unknown): value is EditableMapDocument {
-  return isRecord(value)
-    && value.version === 1
-    && Array.isArray(value.volumes)
-    && isRecord(value.spawnPoints)
-    && Array.isArray(value.navMeshRegions);
-}
-
-function coerceMapDefinition(value: unknown): MapDefinition {
-  if (
-    isRecord(value)
-    && Array.isArray(value.volumes)
-    && Array.isArray(value.navMeshRegions)
-    && isRecord(value.spawnPoints)
-    && isRecord(value.spawnPoints.player)
-    && Array.isArray(value.spawnPoints.ai)
-  ) {
-    return value as unknown as MapDefinition;
-  }
-  throw new Error("JSON is not a WebFPS editor level or runtime map.");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

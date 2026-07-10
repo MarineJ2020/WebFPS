@@ -1,0 +1,17 @@
+name = "webfps-online"
+main = "src/index.ts"
+compatibility_date = "2026-07-10"
+account_id = "4ef81885c4d699c396a1671cab967b05"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "web-fps-d9872"
+ALLOW_GUESTS = "true"
+
+[[durable_objects.bindings]]
+name = "ROOM_DURABLE_OBJECT"
+class_name = "RoomDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDurableObject"]

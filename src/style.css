@@ -231,6 +231,8 @@ select {
 /* ---------------------------------- Inputs ------------------------------- */
 
 .local-multiplayer-box input,
+.online-multiplayer-box input,
+.menu-level-select,
 .editor-name-input,
 .ui-field input,
 .ui-field select {
@@ -245,6 +247,8 @@ select {
 }
 
 .local-multiplayer-box input:hover,
+.online-multiplayer-box input:hover,
+.menu-level-select:hover,
 .editor-name-input:hover,
 .ui-field input:hover,
 .ui-field select:hover {
@@ -252,6 +256,8 @@ select {
 }
 
 .local-multiplayer-box input:focus,
+.online-multiplayer-box input:focus,
+.menu-level-select:focus,
 .editor-name-input:focus,
 .ui-field input:focus,
 .ui-field select:focus {
@@ -264,6 +270,8 @@ input::placeholder {
 }
 
 .local-multiplayer-box input,
+.online-multiplayer-box input,
+.menu-level-select,
 .editor-name-input {
   width: 100%;
 }
@@ -344,6 +352,58 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--ui-radius);
   color: var(--ui-text-dim);
   font-size: 13px;
+  background: var(--ui-inset);
+}
+
+.profile-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-avatar {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--ui-stroke);
+  border-radius: 50%;
+  color: #081018;
+  font-weight: 700;
+  background: var(--ui-accent);
+  background-position: center;
+  background-size: cover;
+}
+
+.profile-avatar-image {
+  color: transparent;
+}
+
+.profile-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.profile-name {
+  overflow: hidden;
+  color: var(--ui-text);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-meta,
+.profile-stats {
+  color: var(--ui-text-faint);
+  font-size: 12px;
+}
+
+.profile-stats {
+  padding: 8px 10px;
+  border-radius: var(--ui-radius);
   background: var(--ui-inset);
 }
 
@@ -438,6 +498,23 @@ input[type="range"]::-moz-range-thumb {
   display: grid;
   gap: 6px;
   padding: 10px;
+}
+
+.online-room-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.online-room-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.online-room-row .ui-button {
+  flex: 0 0 auto;
 }
 
 .lobby-player,

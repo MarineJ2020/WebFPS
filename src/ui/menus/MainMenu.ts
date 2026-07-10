@@ -1,12 +1,35 @@
 import { createButton, createPanel } from "../components/NativeControls";
-import type { LanRoomSummary } from "../../net/LanProtocol";
+
+export interface MenuLevelOption {
+  id: string;
+  name: string;
+  source: "built-in" | "folder" | "import";
+}
+
+export interface MenuProfileView {
+  displayName: string;
+  avatarUrl: string | null;
+  avatarDataUrl: string | null;
+  accentColor: string;
+  isGuest: boolean;
+  firebaseConfigured: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  matchesPlayed: number;
+  wins: number;
+  kda: number;
+}
 
 export interface MainMenuActions {
   onStartGame: () => void;
-  onCreateLanRoom: (roomName: string, playerName: string) => void;
-  onJoinLanRoom: (roomId: string, playerName: string) => void;
+  onSelectLevel: (levelId: string) => void;
   onImportLevel: (json: string, fileName: string) => void;
-  onClearImportedLevel: () => void;
+  onSignInGoogle: () => void;
+  onContinueGuest: () => void;
+  onSignOut: () => void;
+  onUploadAvatar: (file: File) => void;
+  onJoinOnline: () => void;
   onOpenEditor: () => void;
   onOpenSettings: () => void;
 }
@@ -14,12 +37,18 @@ export interface MainMenuActions {
 export class MainMenu {
   private readonly root: HTMLDivElement;
   private readonly status: HTMLDivElement;
-  private readonly roomInput: HTMLInputElement;
-  private readonly nameInput: HTMLInputElement;
+  private readonly onlineStatus: HTMLDivElement;
   private readonly levelInput: HTMLInputElement;
-  private readonly levelLabel: HTMLDivElement;
-  private readonly lanStatus: HTMLDivElement;
-  private readonly roomList: HTMLDivElement;
+  private readonly levelSelect: HTMLSelectElement;
+  private readonly avatarInput: HTMLInputElement;
+  private readonly avatar: HTMLDivElement;
+  private readonly profileName: HTMLDivElement;
+  private readonly profileMeta: HTMLDivElement;
+  private readonly profileStats: HTMLDivElement;
+  private readonly signInButton: HTMLButtonElement;
+  private readonly guestButton: HTMLButtonElement;
+  private readonly signOutButton: HTMLButtonElement;
+  private readonly uploadAvatarButton: HTMLButtonElement;
   private actions: MainMenuActions | null = null;
 
   constructor(container: HTMLElement) {
@@ -39,12 +68,60 @@ export class MainMenu {
     panel.appendChild(title);
 
     const copy = document.createElement("p");
-    copy.textContent = "Blockout combat sandbox with room to grow into classes, loadouts, and multiplayer.";
+    copy.textContent = "Online-first FPS prototype with Firebase profiles and Cloudflare multiplayer preparation.";
     panel.appendChild(copy);
 
     const actions = document.createElement("div");
     actions.className = "menu-actions";
     actions.appendChild(createButton("Start Game", () => this.actions?.onStartGame(), "primary"));
+
+    const profileBox = document.createElement("div");
+    profileBox.className = "profile-box menu-option-box";
+    const profileTitle = document.createElement("div");
+    profileTitle.className = "menu-eyebrow";
+    profileTitle.textContent = "Profile";
+    profileBox.appendChild(profileTitle);
+
+    const profileRow = document.createElement("div");
+    profileRow.className = "profile-summary-row";
+    this.avatar = document.createElement("div");
+    this.avatar.className = "profile-avatar";
+    this.avatar.textContent = "P";
+    profileRow.appendChild(this.avatar);
+
+    const profileText = document.createElement("div");
+    profileText.className = "profile-copy";
+    this.profileName = document.createElement("div");
+    this.profileName.className = "profile-name";
+    this.profileName.textContent = "Guest";
+    this.profileMeta = document.createElement("div");
+    this.profileMeta.className = "profile-meta";
+    this.profileMeta.textContent = "Ephemeral guest profile";
+    profileText.appendChild(this.profileName);
+    profileText.appendChild(this.profileMeta);
+    profileRow.appendChild(profileText);
+    profileBox.appendChild(profileRow);
+
+    this.profileStats = document.createElement("div");
+    this.profileStats.className = "profile-stats";
+    profileBox.appendChild(this.profileStats);
+
+    this.avatarInput = document.createElement("input");
+    this.avatarInput.type = "file";
+    this.avatarInput.accept = "image/*";
+    this.avatarInput.style.display = "none";
+    this.avatarInput.addEventListener("change", () => this.importAvatarFile());
+    profileBox.appendChild(this.avatarInput);
+
+    const profileActions = document.createElement("div");
+    profileActions.className = "editor-button-row";
+    this.signInButton = createButton("Sign In Google", () => this.actions?.onSignInGoogle(), "primary");
+    this.guestButton = createButton("Use Guest", () => this.actions?.onContinueGuest());
+    this.uploadAvatarButton = createButton("Upload Avatar", () => this.avatarInput.click());
+    this.signOutButton = createButton("Sign Out", () => this.actions?.onSignOut());
+    profileActions.append(this.signInButton, this.guestButton, this.uploadAvatarButton, this.signOutButton);
+    profileBox.appendChild(profileActions);
+    actions.appendChild(profileBox);
 
     const levelBox = document.createElement("div");
     levelBox.className = "menu-option-box";
@@ -53,10 +130,10 @@ export class MainMenu {
     levelTitle.textContent = "Level";
     levelBox.appendChild(levelTitle);
 
-    this.levelLabel = document.createElement("div");
-    this.levelLabel.className = "menu-option-label";
-    this.levelLabel.textContent = "Built-in blockout";
-    levelBox.appendChild(this.levelLabel);
+    this.levelSelect = document.createElement("select");
+    this.levelSelect.className = "menu-level-select";
+    this.levelSelect.addEventListener("change", () => this.actions?.onSelectLevel(this.levelSelect.value));
+    levelBox.appendChild(this.levelSelect);
 
     this.levelInput = document.createElement("input");
     this.levelInput.type = "file";
@@ -68,46 +145,21 @@ export class MainMenu {
     const levelActions = document.createElement("div");
     levelActions.className = "editor-button-row";
     levelActions.appendChild(createButton("Import Level", () => this.levelInput.click()));
-    levelActions.appendChild(createButton("Use Built-in", () => {
-      this.levelInput.value = "";
-      this.setImportedLevelLabel(null);
-      this.actions?.onClearImportedLevel();
-    }));
     levelBox.appendChild(levelActions);
     actions.appendChild(levelBox);
 
-    const multiplayer = document.createElement("div");
-    multiplayer.className = "local-multiplayer-box menu-option-box";
-    const multiplayerTitle = document.createElement("div");
-    multiplayerTitle.className = "menu-eyebrow";
-    multiplayerTitle.textContent = "LAN Multiplayer";
-    multiplayer.appendChild(multiplayerTitle);
-
-    this.lanStatus = document.createElement("div");
-    this.lanStatus.className = "menu-option-label";
-    this.lanStatus.textContent = "Connecting to LAN server...";
-    multiplayer.appendChild(this.lanStatus);
-
-    this.roomList = document.createElement("div");
-    this.roomList.className = "lan-room-list";
-    multiplayer.appendChild(this.roomList);
-
-    this.roomInput = document.createElement("input");
-    this.roomInput.placeholder = "Room name or room id";
-    this.roomInput.value = "WebFPS Room";
-    multiplayer.appendChild(this.roomInput);
-
-    this.nameInput = document.createElement("input");
-    this.nameInput.placeholder = "Name";
-    this.nameInput.value = "Player";
-    multiplayer.appendChild(this.nameInput);
-
-    const multiplayerActions = document.createElement("div");
-    multiplayerActions.className = "editor-button-row";
-    multiplayerActions.appendChild(createButton("Start LAN Server", () => this.actions?.onCreateLanRoom(this.roomInput.value, this.nameInput.value), "primary"));
-    multiplayerActions.appendChild(createButton("Join by ID", () => this.actions?.onJoinLanRoom(this.roomInput.value, this.nameInput.value)));
-    multiplayer.appendChild(multiplayerActions);
-    actions.appendChild(multiplayer);
+    const onlineBox = document.createElement("div");
+    onlineBox.className = "online-multiplayer-box menu-option-box";
+    const onlineTitle = document.createElement("div");
+    onlineTitle.className = "menu-eyebrow";
+    onlineTitle.textContent = "Online Multiplayer";
+    onlineBox.appendChild(onlineTitle);
+    this.onlineStatus = document.createElement("div");
+    this.onlineStatus.className = "menu-option-label";
+    this.onlineStatus.textContent = "Cloudflare server not connected.";
+    onlineBox.appendChild(this.onlineStatus);
+    onlineBox.appendChild(createButton("Join Online", () => this.actions?.onJoinOnline(), "primary"));
+    actions.appendChild(onlineBox);
 
     actions.appendChild(createButton("Level Editor", () => this.actions?.onOpenEditor()));
     actions.appendChild(createButton("Settings", () => this.actions?.onOpenSettings()));
@@ -118,6 +170,7 @@ export class MainMenu {
     panel.appendChild(this.status);
 
     container.appendChild(this.root);
+    this.setProfile(defaultProfileView());
   }
 
   setActions(actions: MainMenuActions): void {
@@ -128,39 +181,37 @@ export class MainMenu {
     this.status.textContent = message;
   }
 
-  setImportedLevelLabel(fileName: string | null): void {
-    this.levelLabel.textContent = fileName ? `Imported: ${fileName}` : "Built-in blockout";
+  setOnlineStatus(message: string, connected: boolean): void {
+    this.onlineStatus.textContent = message;
+    this.onlineStatus.classList.toggle("lan-status-online", connected);
   }
 
-  setLanConnectionStatus(message: string, connected: boolean): void {
-    this.lanStatus.textContent = message;
-    this.lanStatus.classList.toggle("lan-status-online", connected);
+  setLevels(levels: readonly MenuLevelOption[], selectedId: string): void {
+    this.levelSelect.replaceChildren();
+    for (const level of levels) {
+      const option = document.createElement("option");
+      option.value = level.id;
+      option.textContent = `${level.name} (${levelSourceLabel(level.source)})`;
+      this.levelSelect.appendChild(option);
+    }
+    this.levelSelect.value = selectedId;
   }
 
-  setLanRooms(rooms: readonly LanRoomSummary[]): void {
-    this.roomList.replaceChildren();
-    if (rooms.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "lan-room-empty";
-      empty.textContent = "No rooms yet.";
-      this.roomList.appendChild(empty);
-      return;
-    }
-
-    for (const room of rooms) {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "lan-room-row";
-      row.innerHTML = `
-        <span>${escapeHtml(room.name)}</span>
-        <small>${escapeHtml(room.phase)} · Host ${escapeHtml(room.hostName)} · ${room.playerCount} player${room.playerCount === 1 ? "" : "s"} · A ${room.teamCounts.A} / B ${room.teamCounts.B}</small>
-      `;
-      row.addEventListener("click", () => {
-        this.roomInput.value = room.id;
-        this.actions?.onJoinLanRoom(room.id, this.nameInput.value);
-      });
-      this.roomList.appendChild(row);
-    }
+  setProfile(profile: MenuProfileView): void {
+    this.profileName.textContent = profile.displayName;
+    this.profileMeta.textContent = profile.isGuest
+      ? "Guest session - stats are not saved"
+      : profile.firebaseConfigured
+        ? "Google profile - online stats can be saved"
+        : "Firebase not configured";
+    this.profileStats.textContent =
+      `K/D/A ${profile.kills}/${profile.deaths}/${profile.assists} - KDA ${profile.kda.toFixed(2)} - Matches ${profile.matchesPlayed} - Wins ${profile.wins}`;
+    this.avatar.textContent = profile.displayName.slice(0, 1).toUpperCase() || "P";
+    this.avatar.style.backgroundColor = profile.accentColor;
+    const avatarImage = profile.avatarDataUrl ?? profile.avatarUrl;
+    this.avatar.style.backgroundImage = avatarImage ? `url("${avatarImage}")` : "";
+    this.avatar.classList.toggle("profile-avatar-image", Boolean(avatarImage));
+    this.signOutButton.disabled = profile.isGuest;
   }
 
   show(): void {
@@ -178,26 +229,43 @@ export class MainMenu {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       this.actions?.onImportLevel(String(reader.result), file.name);
-      this.setImportedLevelLabel(file.name);
       this.levelInput.value = "";
     });
     reader.readAsText(file);
   }
+
+  private importAvatarFile(): void {
+    const file = this.avatarInput.files?.[0];
+    if (!file) return;
+    this.actions?.onUploadAvatar(file);
+    this.avatarInput.value = "";
+  }
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case "&":
-        return "&amp;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case "\"":
-        return "&quot;";
-      default:
-        return "&#039;";
-    }
-  });
+function defaultProfileView(): MenuProfileView {
+  return {
+    displayName: "Guest",
+    avatarUrl: null,
+    avatarDataUrl: null,
+    accentColor: "#6bb8ff",
+    isGuest: true,
+    firebaseConfigured: false,
+    kills: 0,
+    deaths: 0,
+    assists: 0,
+    matchesPlayed: 0,
+    wins: 0,
+    kda: 0,
+  };
+}
+
+function levelSourceLabel(source: MenuLevelOption["source"]): string {
+  switch (source) {
+    case "built-in":
+      return "built-in";
+    case "folder":
+      return "folder";
+    case "import":
+      return "imported";
+  }
 }
