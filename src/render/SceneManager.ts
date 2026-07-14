@@ -7,6 +7,8 @@ export class SceneManager {
   readonly viewmodelScene: THREE.Scene;
   readonly viewmodelCamera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
+  private readonly viewmodelEnvironmentQuaternion = new THREE.Quaternion();
+  private readonly viewmodelEnvironmentEuler = new THREE.Euler(0, 0, 0, "YXZ");
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
@@ -75,7 +77,14 @@ export class SceneManager {
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
     this.renderer.clearDepth();
+    this.syncViewmodelEnvironmentRotation();
     this.renderer.render(this.viewmodelScene, this.viewmodelCamera);
+  }
+
+  private syncViewmodelEnvironmentRotation(): void {
+    this.viewmodelEnvironmentQuaternion.copy(this.camera.quaternion).invert();
+    this.viewmodelEnvironmentEuler.setFromQuaternion(this.viewmodelEnvironmentQuaternion, "YXZ");
+    this.viewmodelScene.environmentRotation.copy(this.viewmodelEnvironmentEuler);
   }
 
   dispose(): void {
