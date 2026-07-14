@@ -20,6 +20,7 @@ const MODEL_SCALE = 1;
 const MODEL_ROTATION_EULER = new THREE.Euler(0, 90+45, 0);
 const MODEL_LOCAL_OFFSET = new THREE.Vector3(0.2, -0.2, -0.2);
 const MUZZLE_LOCAL_OFFSET = new THREE.Vector3(0, 0, -0.6);
+const VIEWMODEL_ENV_INTENSITY = 2.2;
 
 /** Placeholder-primitive or real animated gun, rendered in a separate first-person scene so world geometry cannot clip it. */
 export class PlayerViewmodel {
@@ -53,6 +54,8 @@ export class PlayerViewmodel {
     if (config.firstPersonModelUrl) {
       const { scene, animations } = await loadModelInstance(config.firstPersonModelUrl);
       if (token !== this.loadToken) return; // a newer setWeapon call superseded this one
+
+      applyViewmodelMaterialLighting(scene);
 
       const modelRoot = new THREE.Group();
       modelRoot.scale.setScalar(MODEL_SCALE);
@@ -134,6 +137,19 @@ export class PlayerViewmodel {
       this.modelRoot = null;
     }
   }
+}
+
+function applyViewmodelMaterialLighting(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
+        material.envMapIntensity = Math.max(material.envMapIntensity, VIEWMODEL_ENV_INTENSITY);
+        material.needsUpdate = true;
+      }
+    }
+  });
 }
 
 function disposeObject3D(root: THREE.Object3D): void {

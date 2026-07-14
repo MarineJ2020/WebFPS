@@ -41,7 +41,7 @@ export class SceneManager {
 
     this.addLights();
     this.addViewmodelLights();
-    loadSkybox(this.scene, this.renderer);
+    loadSkybox(this.scene, this.renderer, [this.scene, this.viewmodelScene]);
 
     window.addEventListener("resize", this.onResize);
   }
