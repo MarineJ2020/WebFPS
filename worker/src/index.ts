@@ -201,28 +201,30 @@ export class RoomDurableObject {
       this.send(socket, { type: "error", message: "Room no longer exists." });
       return;
     }
-    if (room.phase !== "lobby") {
-      this.send(socket, { type: "error", message: "That room has already started." });
-      return;
-    }
-
     this.leaveRoom(socket, false);
     player.roomId = roomId;
     player.displayName = playerName || player.displayName;
-    const existing = room.players.find((entry) => entry.id === player.id);
+    let existing = room.players.find((entry) => entry.id === player.id);
     if (existing) {
       existing.connected = true;
       existing.name = player.displayName;
     } else {
-      room.players.push({
+      existing = {
         id: player.id,
         name: player.displayName,
         team: teamWithFewestPlayers(room.players),
         isHost: false,
         connected: true,
-      });
+      };
+      room.players.push(existing);
     }
-    this.broadcastLobby(room);
+
+    if (room.phase !== "lobby" && room.simulation) {
+      room.simulation.addPlayer(existing);
+      this.send(socket, { type: "onlineMatchStarted", roomId: room.id, map: room.map });
+    } else {
+      this.broadcastLobby(room);
+    }
     this.broadcastRoomList();
   }
 

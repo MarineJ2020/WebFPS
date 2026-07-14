@@ -8,13 +8,16 @@ const SKYBOX_URL = "/skybox/skybox.exr";
  * hasn't been dropped in (or fails to load), the scene just keeps its flat fallback color -
  * this is a nice-to-have, not a hard requirement.
  */
-export function loadSkybox(scene: THREE.Scene): void {
+export function loadSkybox(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
   new EXRLoader().setDataType(THREE.FloatType).load(
     SKYBOX_URL,
     (texture) => {
       texture.mapping = THREE.EquirectangularReflectionMapping;
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const environment = pmrem.fromEquirectangular(texture).texture;
       scene.background = texture;
-      scene.environment = texture;
+      scene.environment = environment;
+      pmrem.dispose();
     },
     undefined,
     () => {

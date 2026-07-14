@@ -95,7 +95,11 @@ function handleMessage(client: ClientSocket, message: LanClientMessage): void {
       broadcastLobby(room.id);
       broadcastRoomList();
       cancelIdleShutdown();
-      if (room.phase !== "lobby") send(client, { type: "matchStarted", roomId: room.id, map: room.map });
+      if (room.phase !== "lobby") {
+        const joinedPlayer = room.players.find((player) => player.id === client.id);
+        if (joinedPlayer) matches.get(room.id)?.simulation.addPlayer(joinedPlayer);
+        send(client, { type: "matchStarted", roomId: room.id, map: room.map });
+      }
       break;
     }
     case "leaveRoom": {

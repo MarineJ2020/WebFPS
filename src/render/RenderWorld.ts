@@ -162,9 +162,9 @@ export class RenderWorld {
         position: bot.position,
         yaw: bot.yaw,
         dead: bot.dead,
-        weaponConfigId: bot.weapon.configId,
-      })),
-    ]);
+          weaponConfigId: bot.weapon.configId,
+        })),
+    ], dt);
     this.entityRenderer.syncPickups(snapshot.pickups);
 
     for (const shot of snapshot.shots) {

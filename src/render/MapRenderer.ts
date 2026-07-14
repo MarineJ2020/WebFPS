@@ -47,7 +47,12 @@ export function buildVolumeMesh(volume: MapVolume): THREE.Mesh {
     volume.halfExtents.y * 2,
     volume.halfExtents.z * 2,
   );
-  const material = new THREE.MeshStandardMaterial({ color: VOLUME_COLOR[volume.kind] });
+  const material = new THREE.MeshStandardMaterial({
+    color: VOLUME_COLOR[volume.kind],
+    roughness: 0.72,
+    metalness: 0,
+    envMapIntensity: 1.35,
+  });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(volume.position.x, volume.position.y, volume.position.z);
   if (volume.rotation) {

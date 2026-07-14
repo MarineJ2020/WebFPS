@@ -32,13 +32,16 @@ export class SceneManager {
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.autoClear = false;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.08;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(this.renderer.domElement);
 
     this.addLights();
     this.addViewmodelLights();
-    loadSkybox(this.scene);
+    loadSkybox(this.scene, this.renderer);
 
     window.addEventListener("resize", this.onResize);
   }
@@ -51,11 +54,11 @@ export class SceneManager {
   }
 
   private addLights(): void {
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x5f6d7a, 1.7);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-    sun.position.set(10, 20, 10);
+    const sun = new THREE.DirectionalLight(0xfff4df, 2.2);
+    sun.position.set(12, 20, 8);
     this.scene.add(sun);
   }
 

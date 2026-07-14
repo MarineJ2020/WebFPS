@@ -153,8 +153,7 @@ export class OnlineLobbyMenu {
 
   private renderRooms(): void {
     this.roomList.replaceChildren();
-    const rooms = this.rooms.filter((room) => room.phase === "lobby");
-    if (rooms.length === 0) {
+    if (this.rooms.length === 0) {
       const empty = document.createElement("div");
       empty.className = "lobby-empty";
       empty.textContent = "No open rooms yet. Create one to start.";
@@ -162,11 +161,11 @@ export class OnlineLobbyMenu {
       return;
     }
 
-    for (const room of rooms) {
+    for (const room of this.rooms) {
       const row = document.createElement("div");
       row.className = "online-room-row lobby-player";
       const label = document.createElement("span");
-      label.textContent = `${room.name} - ${room.playerCount} player${room.playerCount === 1 ? "" : "s"}`;
+      label.textContent = `${room.name} - ${room.playerCount} player${room.playerCount === 1 ? "" : "s"} - ${formatPhase(room.phase)}`;
       row.appendChild(label);
       row.appendChild(createButton("Join", () => this.actions?.onJoinRoom(room.id), "primary"));
       this.roomList.appendChild(row);
@@ -192,6 +191,23 @@ export class OnlineLobbyMenu {
       row.textContent = `${player.name}${player.isHost ? " - Host" : ""}`;
       body.appendChild(row);
     }
+  }
+}
+
+function formatPhase(phase: OnlineRoomSummary["phase"]): string {
+  switch (phase) {
+    case "lobby":
+      return "Lobby";
+    case "warmup":
+      return "Warmup";
+    case "countdown":
+      return "Countdown";
+    case "live":
+      return "Live";
+    case "roundEnd":
+      return "Round End";
+    case "rematch":
+      return "Rematch";
   }
 }
 

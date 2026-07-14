@@ -37,6 +37,8 @@ const GRAVITY_Y = -9.81;
 const JUMP_SPEED = 6;
 const FLOOR_Y = 0.1;
 const BOT_REACTION_SECONDS = 0.25;
+const CHARACTER_COLLISION_RADIUS = 0.35;
+const CHARACTER_COLLISION_HEIGHT = 1.7;
 
 interface PlayerRig {
   player: Player;
@@ -62,6 +64,7 @@ export class LanMatchSimulation {
   private readonly roomId: string;
   private readonly events = new EventBus();
   private readonly hitscan: CharacterAwareHitscanQuery;
+  private readonly map: MapDefinition;
   private readonly players = new Map<string, PlayerRig>();
   private readonly bots: BotRig[] = [];
   private readonly gameMode: DeathmatchGameMode;
@@ -70,6 +73,7 @@ export class LanMatchSimulation {
 
   constructor(roomId: string, roomPlayers: readonly LanRoomPlayer[], map = createDefaultSessionDefinition().map) {
     this.roomId = roomId;
+    this.map = map;
     this.hitscan = new CharacterAwareHitscanQuery(new VolumeHitscanQuery(map.volumes));
     this.gameMode = new DeathmatchGameMode({ now: performanceNowSeconds() });
 
@@ -121,6 +125,27 @@ export class LanMatchSimulation {
     const rig = this.players.get(playerId);
     if (!rig) return;
     rig.command = command;
+  }
+
+  addPlayer(player: LanRoomPlayer): void {
+    const existing = this.players.get(player.id);
+    if (existing) {
+      existing.name = player.name;
+      existing.team = player.team;
+      return;
+    }
+
+    const teamIndex = [...this.players.values()].filter((rig) => rig.team === player.team).length;
+    const spawn = pickTeamSpawn(this.map, player.team, teamIndex);
+    this.players.set(player.id, {
+      player: new Player(player.id, spawn, [createWeapon(getWeaponConfig(ASSAULT_RIFLE_01.id))]),
+      name: player.name,
+      team: player.team,
+      spawn,
+      command: emptyPlayerCommand(),
+      dead: false,
+      respawnAt: 0,
+    });
   }
 
   update(dt: number, now: number): void {
@@ -186,7 +211,7 @@ export class LanMatchSimulation {
     player.yaw += command.yawDelta;
     player.pitch = clamp(player.pitch + command.pitchDelta, -MAX_PLAYER_PITCH, MAX_PLAYER_PITCH);
 
-    moveCharacter(player, command.moveX, command.moveZ, command.jumpRequested, dt, MOVE_SPEED);
+    moveCharacter(player, command.moveX, command.moveZ, command.jumpRequested, dt, MOVE_SPEED, this.map.volumes);
 
     const weapon = player.currentWeapon;
     const config = getWeaponConfig(weapon.configId);
@@ -211,7 +236,7 @@ export class LanMatchSimulation {
     const distanceToTarget = distance(rig.bot.position, target.position);
     if (distanceToTarget > 9) {
       const forward = directionTo(rig.bot.position, target.position);
-      moveCharacter(rig.bot, forward.x, forward.z, false, dt, BOT_MOVE_SPEED);
+      moveCharacter(rig.bot, forward.x, forward.z, false, dt, BOT_MOVE_SPEED, this.map.volumes);
     }
 
     const canFire = distanceToTarget <= BOT_VIEW_RANGE && this.hasLineOfSight(rig.bot, target);
@@ -502,7 +527,15 @@ function pickTeamSpawn(map: MapDefinition, team: LocalTeam, index: number): Vec3
   };
 }
 
-function moveCharacter(character: Character, moveX: number, moveZ: number, jumpRequested: boolean, dt: number, speed: number): void {
+function moveCharacter(
+  character: Character,
+  moveX: number,
+  moveZ: number,
+  jumpRequested: boolean,
+  dt: number,
+  speed: number,
+  volumes: readonly MapVolume[],
+): void {
   const rawLen = Math.hypot(moveX, moveZ);
   const scale = rawLen > 1 ? 1 / rawLen : 1;
   const nx = moveX * scale;
@@ -519,15 +552,82 @@ function moveCharacter(character: Character, moveX: number, moveZ: number, jumpR
     character.verticalVelocity += GRAVITY_Y * dt;
   }
 
-  character.position.x += worldX * speed * dt;
-  character.position.y += character.verticalVelocity * dt;
-  character.position.z += worldZ * speed * dt;
+  const start = { ...character.position };
+  const next = {
+    x: character.position.x + worldX * speed * dt,
+    y: character.position.y + character.verticalVelocity * dt,
+    z: character.position.z + worldZ * speed * dt,
+  };
 
-  if (character.position.y <= FLOOR_Y) {
-    character.position.y = FLOOR_Y;
+  if (next.y <= FLOOR_Y) {
+    next.y = FLOOR_Y;
     character.verticalVelocity = 0;
     character.grounded = true;
   }
+
+  const resolvedX = resolveHorizontalAxis(start, next, "x", volumes);
+  const resolvedZ = resolveHorizontalAxis({ ...start, x: resolvedX.x }, { ...next, x: resolvedX.x }, "z", volumes);
+  character.position = resolvedZ;
+}
+
+function resolveHorizontalAxis(
+  start: Vec3,
+  proposed: Vec3,
+  axis: "x" | "z",
+  volumes: readonly MapVolume[],
+): Vec3 {
+  const resolved = { ...proposed };
+  const delta = proposed[axis] - start[axis];
+  if (Math.abs(delta) < 0.00001) return resolved;
+
+  for (const volume of volumes) {
+    if (!isSolidCharacterBlocker(volume)) continue;
+    if (!characterOverlapsVolume(resolved, volume) && !crossesVolumeOnAxis(start, proposed, axis, volume)) continue;
+    const halfExtent = volume.halfExtents[axis] + CHARACTER_COLLISION_RADIUS;
+    resolved[axis] = delta > 0
+      ? volume.position[axis] - halfExtent
+      : volume.position[axis] + halfExtent;
+  }
+
+  return resolved;
+}
+
+function crossesVolumeOnAxis(start: Vec3, proposed: Vec3, axis: "x" | "z", volume: MapVolume): boolean {
+  if (volume.rotation || !characterYOverlapsVolume(proposed, volume)) return false;
+  const otherAxis = axis === "x" ? "z" : "x";
+  const otherMin = volume.position[otherAxis] - volume.halfExtents[otherAxis] - CHARACTER_COLLISION_RADIUS;
+  const otherMax = volume.position[otherAxis] + volume.halfExtents[otherAxis] + CHARACTER_COLLISION_RADIUS;
+  if (proposed[otherAxis] < otherMin || proposed[otherAxis] > otherMax) return false;
+
+  const delta = proposed[axis] - start[axis];
+  if (delta > 0) {
+    const boundary = volume.position[axis] - volume.halfExtents[axis] - CHARACTER_COLLISION_RADIUS;
+    return start[axis] <= boundary && proposed[axis] > boundary;
+  }
+  if (delta < 0) {
+    const boundary = volume.position[axis] + volume.halfExtents[axis] + CHARACTER_COLLISION_RADIUS;
+    return start[axis] >= boundary && proposed[axis] < boundary;
+  }
+  return false;
+}
+
+function characterOverlapsVolume(position: Vec3, volume: MapVolume): boolean {
+  if (volume.rotation || !characterYOverlapsVolume(position, volume)) return false;
+  const closestX = clamp(position.x, volume.position.x - volume.halfExtents.x, volume.position.x + volume.halfExtents.x);
+  const closestZ = clamp(position.z, volume.position.z - volume.halfExtents.z, volume.position.z + volume.halfExtents.z);
+  return Math.hypot(position.x - closestX, position.z - closestZ) < CHARACTER_COLLISION_RADIUS;
+}
+
+function characterYOverlapsVolume(position: Vec3, volume: MapVolume): boolean {
+  const minY = volume.position.y - volume.halfExtents.y;
+  const maxY = volume.position.y + volume.halfExtents.y;
+  const feetY = position.y;
+  const headY = position.y + CHARACTER_COLLISION_HEIGHT;
+  return headY > minY && feetY < maxY;
+}
+
+function isSolidCharacterBlocker(volume: MapVolume): boolean {
+  return volume.kind === "wall" || volume.kind === "cover";
 }
 
 function resetCharacter(character: Character): void {

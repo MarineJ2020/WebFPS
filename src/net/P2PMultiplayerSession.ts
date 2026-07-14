@@ -186,17 +186,23 @@ export class P2PHostSession implements MultiplayerSession {
     if (!channel) return;
     channel.addEventListener("open", () => {
       if (!this.lobby) return;
-      if (!this.lobby.players.some((player) => player.id === peer.id)) {
-        this.lobby.players.push({
+      let joinedPlayer = this.lobby.players.find((player) => player.id === peer.id);
+      if (!joinedPlayer) {
+        joinedPlayer = {
           id: peer.id,
           name: peer.name,
           team: pickBalancedTeam(this.lobby.players),
           isHost: false,
           connected: true,
-        });
+        };
+        this.lobby.players.push(joinedPlayer);
+      } else {
+        joinedPlayer.connected = true;
+        joinedPlayer.name = peer.name;
       }
       this.broadcastLobby();
       if (this.lobby.phase !== "lobby") {
+        this.simulation?.addPlayer(joinedPlayer);
         this.sendToPeer(peer, { type: "matchStarted", roomId: this.lobby.id, map: this.map });
       }
     });

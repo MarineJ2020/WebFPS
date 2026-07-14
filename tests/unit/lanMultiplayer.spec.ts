@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LanMatchSimulation } from "../../src/net/LanMatchSimulation";
 import { LanRoomManager } from "../../src/net/LanRoomManager";
 import type { MapDefinition } from "../../src/data/maps/MapDefinition";
+import { emptyPlayerCommand } from "../../src/core/simulation/commands/PlayerCommand";
 
 const TEST_MAP: MapDefinition = {
   volumes: [],
@@ -65,5 +66,42 @@ describe("LanMatchSimulation", () => {
 
     expect(snapshot.players.find((player) => player.id === "p1")?.position).toEqual({ x: 10, y: 0.1, z: 0 });
     expect(snapshot.players.find((player) => player.id === "p2")?.position).toEqual({ x: -10, y: 0.1, z: 0 });
+  });
+
+  it("adds players who join after a match has started", () => {
+    const simulation = new LanMatchSimulation("room-1", [
+      { id: "p1", name: "Alice", team: "A", isHost: true, connected: true },
+    ], TEST_MAP);
+
+    simulation.addPlayer({ id: "p2", name: "Bea", team: "B", isHost: false, connected: true });
+
+    const snapshot = simulation.snapshot(1);
+    expect(snapshot.players.map((player) => player.id)).toEqual(["p1", "p2"]);
+    expect(snapshot.players.find((player) => player.id === "p2")?.position).toEqual({ x: -10, y: 0.1, z: 0 });
+  });
+
+  it("keeps networked players from walking through solid map volumes", () => {
+    const map: MapDefinition = {
+      volumes: [
+        { kind: "wall", halfExtents: { x: 2, y: 2, z: 0.1 }, position: { x: 0, y: 1, z: -1 } },
+      ],
+      navMeshRegions: [],
+      spawnPoints: {
+        player: { x: 0, y: 0.1, z: 0 },
+        ai: [],
+        points: [
+          { kind: "player", team: "A", position: { x: 0, y: 0.1, z: 0 } },
+        ],
+      },
+    };
+    const simulation = new LanMatchSimulation("room-1", [
+      { id: "p1", name: "Alice", team: "A", isHost: true, connected: true },
+    ], map);
+
+    simulation.setInput("p1", { ...emptyPlayerCommand(), moveZ: 1 });
+    simulation.update(1, 1);
+
+    const player = simulation.snapshot(1).players[0];
+    expect(player.position.z).toBeGreaterThanOrEqual(-0.75);
   });
 });

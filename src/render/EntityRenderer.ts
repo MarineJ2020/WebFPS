@@ -22,6 +22,11 @@ export interface RenderableNetworkCharacter {
   weaponConfigId: string;
 }
 
+interface NetworkVisualState {
+  lastPosition: Vec3;
+  stridePhase: number;
+}
+
 // --- Tunables for attaching the third-person gun model to a bot's "hand". The first-person
 // AutoRifle.glb (same asset family) turned out to need scale 1, not the originally-guessed
 // 0.01 - matching that here, since a 0.01 scale rendered the gun as a barely-visible speck.
@@ -38,6 +43,7 @@ export class EntityRenderer {
   private readonly labelsById = new Map<string, THREE.Sprite>();
   private readonly pickupMeshesById = new Map<string, THREE.Mesh>();
   private readonly gunLoadStarted = new Set<string>();
+  private readonly visualStatesById = new Map<string, NetworkVisualState>();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -63,13 +69,14 @@ export class EntityRenderer {
     }
   }
 
-  syncNetwork(characters: readonly RenderableNetworkCharacter[]): void {
+  syncNetwork(characters: readonly RenderableNetworkCharacter[], dt = 1 / 60): void {
     const activeIds = new Set(characters.map((character) => character.id));
     for (const [id, mesh] of this.meshesById) {
       if (activeIds.has(id)) continue;
       this.scene.remove(mesh);
       disposeObject3D(mesh);
       this.meshesById.delete(id);
+      this.visualStatesById.delete(id);
       const label = this.labelsById.get(id);
       if (label) {
         this.scene.remove(label);
@@ -89,10 +96,26 @@ export class EntityRenderer {
         this.attachGunModel(character.id, character.weaponConfigId, mesh);
       }
 
+      const visualState = this.visualStateFor(character);
+      const speed = horizontalSpeed(visualState.lastPosition, character.position, dt);
+      if (!character.dead && speed > 0.1) {
+        visualState.stridePhase += Math.min(speed, 7) * dt * 7.5;
+      }
+      visualState.lastPosition = { ...character.position };
+
+      const strideAmount = character.dead ? 0 : Math.min(speed / 5, 1);
+      const bob = Math.sin(visualState.stridePhase) * 0.055 * strideAmount;
+      const lean = Math.sin(visualState.stridePhase + Math.PI * 0.5) * 0.035 * strideAmount;
+
       const material = mesh.material as THREE.MeshStandardMaterial;
       material.color.copy(character.dead ? BOT_DEAD_COLOR : character.team === "A" ? TEAM_A_COLOR : TEAM_B_COLOR);
-      mesh.position.set(character.position.x, character.position.y + CAPSULE_HEIGHT / 2, character.position.z);
-      mesh.rotation.y = character.yaw;
+      mesh.position.set(character.position.x, character.position.y + CAPSULE_HEIGHT / 2 + (character.dead ? -0.35 : bob), character.position.z);
+      mesh.rotation.set(
+        character.dead ? Math.PI * 0.5 : 0,
+        character.yaw,
+        character.dead ? 0 : lean,
+        "YXZ",
+      );
 
       let label = this.labelsById.get(character.id);
       if (!label) {
@@ -147,6 +170,16 @@ export class EntityRenderer {
     }
     this.labelsById.clear();
     this.gunLoadStarted.clear();
+    this.visualStatesById.clear();
+  }
+
+  private visualStateFor(character: RenderableNetworkCharacter): NetworkVisualState {
+    let state = this.visualStatesById.get(character.id);
+    if (!state) {
+      state = { lastPosition: { ...character.position }, stridePhase: 0 };
+      this.visualStatesById.set(character.id, state);
+    }
+    return state;
   }
 
   private attachGunModel(id: string, weaponConfigId: string, mesh: THREE.Mesh): void {
@@ -187,6 +220,10 @@ function disposeObject3D(root: THREE.Object3D): void {
       else material.dispose();
     }
   });
+}
+
+function horizontalSpeed(previous: Vec3, next: Vec3, dt: number): number {
+  return Math.hypot(next.x - previous.x, next.z - previous.z) / Math.max(dt, 0.001);
 }
 
 function createNameLabel(name: string): THREE.Sprite {
